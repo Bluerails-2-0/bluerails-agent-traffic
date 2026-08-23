@@ -163,6 +163,12 @@ class Bluerails_Settings {
 			<p>
 				<?php echo esc_html__( 'A CDN sitting in front of WordPress can serve a cached page straight from its own edge, without the request ever reaching WordPress. This plugin only runs inside WordPress, so those edge-cached bot hits are invisible to it — there is no WordPress-level fix for that. Tell us above if a CDN fronts this site so the dashboard can flag that crawl data may be incomplete.', 'bluerails-agent-traffic' ); ?>
 			</p>
+			<p>
+				<?php echo wp_kses_post( __(
+					'This plugin is not the only capture path, though: on the paid Discovery tier, Bluerails also supports connecting your CDN\'s own logs directly (e.g. Cloudflare Logpush) via <strong>Dashboard → Agent Traffic → Connect Logs</strong>. That path sees edge-cached hits this plugin structurally cannot. The two are complementary, not either/or — connect your CDN logs there if you have a CDN, and this plugin still covers whatever isn\'t cached.',
+					'bluerails-agent-traffic'
+				) ); ?>
+			</p>
 		</div>
 		<?php
 	}
@@ -180,7 +186,10 @@ class Bluerails_Settings {
 			return;
 		}
 		echo '<div class="notice notice-warning"><p>' .
-			esc_html__( 'Bluerails Agent Traffic Capture: this site is behind a CDN, so AI-bot hits served from the CDN\'s edge cache never reach WordPress and will be missing from your crawl data. This is expected and does not indicate a plugin malfunction.', 'bluerails-agent-traffic' ) .
+			wp_kses_post( __(
+				'Bluerails Agent Traffic Capture: this site is behind a CDN, so AI-bot hits served from the CDN\'s edge cache never reach WordPress and will be missing from your crawl data. This is expected and does not indicate a plugin malfunction. On the paid Discovery tier, connect your CDN\'s own logs (e.g. Cloudflare Logpush) at <strong>Dashboard → Agent Traffic → Connect Logs</strong> to cover what this plugin structurally cannot.',
+				'bluerails-agent-traffic'
+			) ) .
 			'</p></div>';
 	}
 }

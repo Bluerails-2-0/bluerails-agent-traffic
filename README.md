@@ -95,6 +95,13 @@ persistent admin notice reminding you that crawl data will be incomplete for cac
 this is expected behavior, not a plugin malfunction, and it is surfaced rather than left to
 silently under-report with no explanation.
 
+**This plugin is not the only capture path.** On the paid Discovery tier, Bluerails also
+supports connecting a customer's CDN logs directly (e.g. Cloudflare Logpush) via
+**Dashboard → Agent Traffic → Connect Logs** — that path sees edge-cached hits this plugin
+structurally cannot. The two are complementary: connect CDN logs if you have a CDN, and this
+plugin still covers whatever traffic isn't cached. The settings screen and the persistent
+notice both point customers at Connect Logs now, not just at the limitation.
+
 ## Files
 
 - `bluerails-agent-traffic.php` — main plugin file (header, activation/deactivation hooks).
