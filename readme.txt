@@ -8,7 +8,7 @@ Stable tag: 1.0.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
-Detects AI-bot crawler traffic (GPTBot, ClaudeBot, PerplexityBot, etc.) on your site and reports it to your Bluerails Discovery Agent Traffic dashboard.
+Detects AI-bot crawler traffic (GPTBot, ClaudeBot, PerplexityBot, etc.) and reports it to your Bluerails Discovery Agent Traffic dashboard.
 
 == Description ==
 
