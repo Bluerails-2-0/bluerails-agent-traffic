@@ -3,7 +3,7 @@
 Implemented-By: bluerails-agent-traffic-build-agent
 Independent-Reviewer: bluerails-agent-traffic-review-agent
 
-**Verdict: CHANGES-NEEDED** (docs/compliance gap; no code-correctness blocker)
+**Verdict: PASS** (docs/compliance gap fixed in `38f6567`; see Fix verification below)
 
 ## Overview
 
@@ -372,3 +372,59 @@ confirm the two cross-repo items before merge, in the same ticket, not deferred 
   cross-checked against the actual new payload shape in `report_hit()`; found `readme.txt`
   (the WP.org-facing disclosure) and the settings screen both stale relative to
   `README.md`, which was updated correctly. See Important Issues above.
+
+## Fix verification (2026-08-28)
+
+Verified commit `38f6567` ("BLUE-1473: disclose referer field in readme.txt and settings
+copy") against the three sub-findings that made up the single CHANGES-NEEDED item
+(readme.txt / settings-screen disclosure of the new `referer` field), by reading the
+commit diff (`git show 38f6567`) and the resulting file state directly (`readme.txt`,
+`includes/class-bluerails-settings.php`) on this branch — not the diff alone.
+
+- **`readme.txt` "External services" field list — fixed.** The bulleted payload-field
+  list now includes `` * `referer` — the raw `Referer` header value (empty string when
+  absent), sent on every reported hit, not only the fallback path `` (`readme.txt:60-61`
+  in the current file). The adjacent `bot_name`/`matched_ua_string` bullets were also
+  correctly updated to note their referer-fallback-match behavior, which the diff hadn't
+  called out before either.
+- **"No PII" claim — re-qualified honestly, not just deleted.** Old text (removed):
+  "No personally identifiable information, no page content, and no visitor/bot IP
+  addresses are sent." New text (`readme.txt:70-76`): "No page content and no
+  visitor/bot IP addresses are sent. The `referer` field is passed through unmodified
+  from the visitor's browser and, being a URL, may incidentally carry identifiers from
+  the referring page or session (for example a search query or a chat-thread ID in the
+  query string) — it is not scrubbed or redacted before being sent." This is exactly the
+  scoped, accurate framing the original finding asked for (either scope the claim or
+  justify it) — it scopes it, and names the concrete mechanism (query-string content) by
+  which a referer can carry an identifier. Confirmed via `grep -n "no PII" readme.txt
+  README.md includes/class-bluerails-settings.php` that no stale unqualified "no PII"
+  claim survives anywhere in the repo.
+- **"How it works" Description section — fixed.** A new step 4 was added
+  (`readme.txt:33-37`) describing the referer-fallback path, its trigger condition (UA
+  miss), and its payload shape (empty bot name, full raw UA) — this now mirrors
+  `README.md`'s existing step 4 exactly, closing the gap where only the Changelog
+  entry disclosed the new path.
+- **Settings-screen copy (`includes/class-bluerails-settings.php`) — fixed.** One
+  sentence was added to `render_section_intro()` (line 101): "Every reported hit also
+  includes the raw Referer header, and on a request whose User-Agent matches no known
+  bot signature, the plugin additionally checks that header against a small allow-list
+  of AI-assistant domains as a fallback signal." This is the one surface a WP admin
+  persona actually reads inside wp-admin, and it now discloses both the referer field
+  and the fallback-detection mechanism, addressing the specific gap the review named
+  (a suggested, non-blocking fast-follow that was done anyway).
+- **FAQ section** (`readme.txt` "What data gets sent, and where?") was also brought in
+  sync with the same scoped language, though this wasn't separately named in the
+  original finding — a bonus consistency fix, not required for PASS.
+- **Sanity check:** `php -l includes/class-bluerails-settings.php` → `ok`. No syntax
+  regression from the one-line addition.
+
+**Not in scope for this fix / not re-verified:** the fourth Important Issue (cross-repo
+`AI_REFERER_DOMAINS`/`AI_REFERER_ALLOWLIST` parity and prod ingest-endpoint schema
+tolerance ahead of the companion backend PR) is a distinct, separately-tracked concern
+outside "the stale readme.txt/settings-screen disclosure" this fix pass targeted, and
+remains unverified here as before — it does not block this PASS since it was never part
+of the one CHANGES-NEEDED finding being closed.
+
+**Verdict: PASS.** All three disclosure-gap sub-findings are genuinely fixed, verified
+against the actual post-commit file content (not just the diff), with no stale claims
+left behind and no new defects introduced.
