@@ -98,6 +98,7 @@ class Bluerails_Settings {
 	public function render_section_intro() {
 		echo '<p>' . esc_html__( 'Paste the endpoint URL and API key generated in your Bluerails dashboard (Settings → Agent Traffic).', 'bluerails-agent-traffic' ) . '</p>';
 		echo '<p>' . esc_html__( 'No data leaves this site until both fields below are filled in: the plugin checks for a non-empty endpoint URL and API key before every send, and skips the request entirely if either is missing.', 'bluerails-agent-traffic' ) . '</p>';
+		echo '<p>' . esc_html__( 'Every reported hit also includes the raw Referer header, and on a request whose User-Agent matches no known bot signature, the plugin additionally checks that header against a small allow-list of AI-assistant domains as a fallback signal.', 'bluerails-agent-traffic' ) . '</p>';
 	}
 
 	public function render_endpoint_field() {

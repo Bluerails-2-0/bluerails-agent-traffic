@@ -25,9 +25,15 @@ method for site owners who have no server or CDN log access of their own.
 2. Checks the request's `User-Agent` header against a static, local list of known
    AI-crawler substrings.
 3. On a match, sends a small JSON payload (bot name, matched User-Agent substring,
-   page path/URL, timestamp, site URL) to your configured Bluerails ingest endpoint
-   using `wp_remote_post()` with `blocking => false`, so this never delays or blocks
-   the page response for the visitor (or bot) that triggered it.
+   page path/URL, timestamp, site URL, referer) to your configured Bluerails ingest
+   endpoint using `wp_remote_post()` with `blocking => false`, so this never delays
+   or blocks the page response for the visitor (or bot) that triggered it.
+4. If the User-Agent matches nothing, checks the `Referer` header against a small
+   allow-list of AI-assistant domains (ChatGPT, Perplexity, Claude, Gemini) before
+   giving up. A match still sends the same payload shape, with an empty bot name and
+   the full raw User-Agent in place of a matched substring — a low-coverage fallback
+   signal for agentic browsers (e.g. ChatGPT Atlas) whose UA carries no distinguishing
+   token.
 
 No database table and no custom schema are used — the plugin stores its settings as
 three entries in the standard WordPress Options API (ingest endpoint URL, API key,
@@ -48,17 +54,29 @@ your configured endpoint (`https://discovery.bluerails.com/api/agent-traffic-ing
 by default, but this is a setting, not hardcoded, and can point elsewhere if Bluerails
 changes it):
 
-* `bot_name` — the matched bot's name (e.g. "GPTBot")
-* `matched_ua_string` — the User-Agent substring that matched
+* `bot_name` — the matched bot's name (e.g. "GPTBot"), empty string on a
+  referer-fallback match (see below)
+* `matched_ua_string` — the User-Agent substring that matched, or the full raw
+  User-Agent on a referer-fallback match (there is no matched substring to send)
 * `page_path` — the requested page's path
 * `page_url` — the requested page's full URL
 * `timestamp` — an ISO 8601 UTC timestamp of the hit
 * `site_url` — this site's home URL
+* `referer` — the raw `Referer` header value (empty string when absent), sent on
+  every reported hit, not only the fallback path
 
-No personally identifiable information, no page content, and no visitor/bot IP
-addresses are sent. The request also carries your configured API key as a Bearer
-token in the `Authorization` header, so Bluerails can attribute the hit to your
-account server-side.
+On a request whose User-Agent matches no known bot signature, the plugin also checks
+the `Referer` header against a small allow-list of AI-assistant domains (ChatGPT,
+Perplexity, Claude, Gemini) and, on a match, sends the same payload shape described
+above as a low-coverage fallback signal.
+
+No page content and no visitor/bot IP addresses are sent. The `referer` field is
+passed through unmodified from the visitor's browser and, being a URL, may
+incidentally carry identifiers from the referring page or session (for example a
+search query or a chat-thread ID in the query string) — it is not scrubbed or
+redacted before being sent. The request also carries your configured API key as a
+Bearer token in the `Authorization` header, so Bluerails can attribute the hit to
+your account server-side.
 
 By configuring this plugin you agree to Bluerails' Terms of Service
 (https://bluerails.com/terms) and Privacy Policy (https://bluerails.com/privacy).
@@ -104,8 +122,10 @@ pasted both values in from your Bluerails dashboard.
 = What data gets sent, and where? =
 
 See "External services" above for the exact payload fields and destination. In short:
-bot name, matched User-Agent substring, page path/URL, timestamp, and your site URL —
-no PII, no page content, no visitor IP addresses.
+bot name, matched User-Agent substring, page path/URL, timestamp, site URL, and the
+raw `Referer` header — no page content, no visitor IP addresses, but note the
+`referer` field is passed through unmodified and may incidentally carry identifiers
+from the referring page or session.
 
 = I use Cloudflare / CloudFront in front of my site — will this still work? =
 
