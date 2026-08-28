@@ -23,6 +23,12 @@ No build step, no Composer, no npm — plain PHP, installable as-is.
    giving up. A match still sends the same payload shape, with an empty `bot_name` and the full
    raw User-Agent as `matched_ua_string` — a low-coverage fallback signal for agentic browsers
    (e.g. ChatGPT Atlas) whose UA carries no distinguishing token.
+5. (BLUE-1474, OFF by default) If enabled on the settings screen AND the site runs Complianz
+   with visitor "statistics" consent granted, enqueues a small JS beacon
+   (`assets/js/bluerails-behavioral-beacon.js`) that observes mouse-movement timing/quantization
+   client-side and POSTs a feature summary to this plugin's own REST route
+   (`includes/class-bluerails-behavioral-beacon.php`), which forwards it server-side to the same
+   ingest endpoint. See "Behavioral signal beacon" below for the full design.
 
 ## Setup
 
@@ -69,6 +75,26 @@ The backend resolves `org_id` **server-side from the API key** — the plugin ne
 key are both wp-admin-configurable settings (WordPress Options API), not hardcoded, so the
 ingest path can change without a plugin update.
 
+**BLUE-1474 behavioral payload** (only sent when the beacon is enabled + consent is granted;
+`matched_ua_string` is server-derived from `$_SERVER`, not the browser's own claim):
+
+```json
+{
+  "matched_ua_string": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+  "page_path": "/rooms/deluxe-suite",
+  "timestamp": "2026-08-28T14:05:00+00:00",
+  "site_url": "https://example-hotel.com",
+  "behavioral": {
+    "pointer_capable": true,
+    "move_count": 47,
+    "duration_ms": 4230,
+    "avg_interval_ms": 52.1,
+    "interval_stddev_ms": 1.3,
+    "quantized_ratio": 0.91
+  }
+}
+```
+
 ## Bot list is a local copy, not a live sync
 
 `includes/class-bluerails-bot-detector.php` ships a static seed list of the most-cited AI/LLM
@@ -89,6 +115,56 @@ list here can under- or over-fire the POST but never mislabels what lands in the
 Most AI-assistant traffic (agentic browsers like ChatGPT Atlas in particular) strips the
 Referer header entirely, so this only ever catches a minority of that traffic — it is a cheap,
 additive signal, not the primary detection path.
+
+## Behavioral signal beacon (opt-in, BLUE-1474)
+
+A THIRD identification path, structurally different from the two above: it can only be
+observed **client-side**, because it's mouse-movement behavior, not a request header. Ships
+OFF by default (`bluerails_agent_traffic_behavioral_enabled`, a settings-screen checkbox
+independent of the endpoint/API-key config) — closes the gap left by rendered-browser agents
+(ChatGPT Atlas class) that present as an ordinary Chrome UA with no distinguishing header at
+all, confirmed against OpenAI's own OWL architecture writeup (`.claude/ticket-reviews/
+BLUE-1474.md` claim 2) to actually execute page JS and dispatch real pointer events — unlike a
+raw-fetch training crawler, which never runs this code path at all.
+
+**Consent mechanism chosen: Complianz's documented public JS API**
+(`cmplz_has_consent(category)` / `cmplz_enable_category` / `cmplz_status_change` — see
+https://complianz.io/developers-guide-for-third-party-integrations/, fetched and verified this
+session). Picked over a raw cookie read because Complianz's own developer docs explicitly
+recommend the JS function/event API over reading its cookies directly, and because it's the
+single most-installed WordPress consent plugin with a genuinely documented, stable contract —
+the HALT criterion for this ticket was "a clean, single, well-documented way to read consent,"
+and this is it. The beacon (`assets/js/bluerails-behavioral-beacon.js`) checks
+`cmplz_has_consent('statistics')` before doing anything else; if Complianz isn't present on the
+site at all, the beacon does nothing — fail closed, never assumes consent. Support for other
+CMPs (CookieYes, Borlabs, a generic `window.__consentGranted` hook) is explicitly out of scope
+for this version; nothing in `.claude/ticket-reviews/BLUE-1474.md` or the plugin's existing code
+documented an equivalent contract for any of those, so extending coverage is future work, not a
+silent gap papered over here.
+
+**Why a REST proxy, not a direct POST to the Bluerails endpoint from the browser.** The
+existing two signals run entirely in PHP and attach the API key server-side. This is the first
+one whose DATA (mouse-movement timing) can only be collected in the browser — POSTing directly
+from there to the Bluerails endpoint would require putting the Bearer API key in a
+browser-visible JS variable, readable by any visitor via view-source or the network tab. Instead
+the beacon POSTs to this SITE's own new REST route
+(`bluerails-agent-traffic/v1/behavioral`, `includes/class-bluerails-behavioral-beacon.php`),
+which re-derives the User-Agent from `$_SERVER` (never trusts the browser's own claim, same
+discipline as the other two paths) and forwards server-side via `wp_remote_post` with the API
+key attached, exactly like `report_hit()`. The API key never reaches the browser.
+
+**Mobile/pointer gating.** The beacon reports `matchMedia('(pointer: fine)')` as
+`pointer_capable`; the BACKEND (not this plugin) refuses to score pointer-absence as a bot
+signal on a non-pointer-capable session, since real mobile/touch visitors commonly fire zero or
+sparse `mousemove` events — the same shape this heuristic would otherwise flag. See
+`visibility-web/app/features/agent-traffic/ingest.ts`'s `computeBehavioralScore` for the actual
+gating logic; this plugin only reports the flag, it does not gate on it itself.
+
+**Score, not verdict.** The beacon sends a raw feature summary (move count, timing
+regularity, sub-pixel quantization ratio, pointer-capable flag) — never a confidence value or a
+bot/human label. All scoring happens server-side, under the SAME discipline as the existing
+bot-UA path (the plugin's own claims are never trusted for the label that lands in your
+dashboard).
 
 ## Why `wp_loaded`, not `template_redirect`
 
@@ -130,10 +206,15 @@ notice both point customers at Connect Logs now, not just at the limitation.
 - `bluerails-agent-traffic.php` — main plugin file (header, activation/deactivation hooks).
 - `includes/class-bluerails-settings.php` — admin settings screen (Settings API).
 - `includes/class-bluerails-bot-detector.php` — UA matching + async POST to the ingest endpoint.
+- `includes/class-bluerails-behavioral-beacon.php` — (BLUE-1474) enqueues the JS beacon + the
+  same-origin REST proxy that forwards its feature summary server-side.
+- `assets/js/bluerails-behavioral-beacon.js` — (BLUE-1474) client-side mouse-movement observer,
+  gated on Complianz consent.
 
-No database schema — only two WordPress options are used (`bluerails_agent_traffic_endpoint_url`,
-`bluerails_agent_traffic_api_key`), plus one boolean flag (`bluerails_agent_traffic_has_cdn`)
-for the CDN question, all via the standard WordPress Options API.
+No database schema — WordPress options only: `bluerails_agent_traffic_endpoint_url`,
+`bluerails_agent_traffic_api_key`, `bluerails_agent_traffic_has_cdn` (the CDN question), and
+`bluerails_agent_traffic_behavioral_enabled` (BLUE-1474, OFF by default), all via the standard
+WordPress Options API.
 
 ## License
 
