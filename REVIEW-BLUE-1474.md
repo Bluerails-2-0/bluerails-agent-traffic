@@ -3,7 +3,8 @@
 Implemented-By: bluerails-agent-traffic-build-agent (PR #2, branch `BLUE-1474-behavioral-signal-beacon`)
 Independent-Reviewer: Claude, fresh orchestrator-spawned agent, 2026-08-28 — no shared context with the implementer
 
-**Verdict: CHANGES-NEEDED**
+**Verdict: PASS** (upgraded 2026-08-29 — see "Second independent verification" below; original
+finding was CHANGES-NEEDED, fixed by commit `5affc7c`)
 
 ## Overview
 
@@ -514,3 +515,97 @@ diff and the resulting file state directly
 
 **Verdict: left to the next independent reviewer**, per this fix pass's own scope — not
 flipped to PASS here.
+
+## Second independent verification (2026-08-29)
+
+Independent-Reviewer: Claude, fresh orchestrator-spawned agent — no shared context with either
+the original reviewer or the fix author. Verified `includes/class-bluerails-behavioral-beacon.php`
+as it stands at HEAD of `BLUE-1474-behavioral-signal-beacon` (commit `5851a0b`) by reading the
+file directly (not the fix author's own "Fix verification" write-up above) and by writing and
+running my own PHP harness against the real, unmodified code — not re-reading the fix author's
+harness output as proof.
+
+- **`is_same_origin_request()` exists, is wired as the route's `permission_callback`, and does
+  what it claims — confirmed by direct read.** `register_rest_route()` (`:107-121`) sets
+  `'permission_callback' => array( $this, 'is_same_origin_request' )` (no longer
+  `'__return_true'`). The method (`:132-150`) reads `$request->get_header( 'origin' )`, falls
+  back to `get_header( 'referer' )` when Origin is empty, extracts each side's host with
+  `wp_parse_url( ..., PHP_URL_HOST )`, and does a case-insensitive exact-string host comparison
+  against `wp_parse_url( home_url(), PHP_URL_HOST )`. Returns `false` (which WP core turns into
+  `rest_forbidden`) when: `home_url()` itself has no host, no Origin/Referer header is present at
+  all, or the header's host doesn't parse, or the hosts don't match exactly.
+
+- **My own test, run independently, not the fix author's.** Wrote a standalone harness
+  (`harness_1474_second.php`) that stubs only the WordPress primitives the method touches
+  (`home_url()`, `wp_parse_url()`, a minimal `get_header()`-bearing fake request object) and
+  `require`s the actual unmodified class file from this branch — no copy, no rewrite of the
+  method under test. Six cases run against `home_url() = 'https://victim-hotel.com'`:
+
+  ```
+  Case 1 (no headers at all — bare curl)                          : REJECTED
+  Case 2 (same-origin Origin header)                               : ALLOWED
+  Case 3 (spoofed different-host Origin: attacker.example.com)     : REJECTED
+  Case 4 (no Origin, same-host Referer)                            : ALLOWED
+  Case 5 (same host, different scheme/port — host-only match)      : ALLOWED
+  Case 6 (www. subdomain Origin vs bare host in home_url())        : REJECTED
+  ```
+
+  The three cases this task required are all correct: (a) no Origin/Referer → REJECTED,
+  (b) same-origin Origin → ALLOWED, (c) spoofed different-host Origin → REJECTED. Case 1 is the
+  exact bare-curl PoC from the original blocking finding.
+
+- **Ablated the harness against the pre-fix code, from a fresh clone — not trusting the
+  fix-author's own ablation.** Cloned the repo fresh into `/tmp`, checked out
+  `BLUE-1474-behavioral-signal-beacon`, and extracted
+  `includes/class-bluerails-behavioral-beacon.php` at `0678d65` (the commit the original
+  CHANGES-NEEDED review was written against, immediately before `5affc7c`). Running the same
+  harness against that pre-fix file throws `Call to undefined method
+  Bluerails_Behavioral_Beacon::is_same_origin_request()` — the method did not exist at all before
+  the fix, and `register_rest_route()` at that commit sets `'permission_callback' =>
+  '__return_true'` verbatim (confirmed by reading `git show 0678d65:...` directly), which is
+  unconditionally `true` for every request regardless of headers — i.e. Case 1's bare curl would
+  have been ALLOWED (202, real relay with the real API key) under the pre-fix code. The harness
+  distinguishes fixed from broken; it is not a restatement of the fix.
+
+- **Scope check — confirmed via `git diff 0678d65 5851a0b`, from the fresh clone.** Between the
+  CHANGES-NEEDED commit and current HEAD, exactly two files changed: `REVIEW-BLUE-1474.md`
+  (+55/-0, the fix-author's own review update) and
+  `includes/class-bluerails-behavioral-beacon.php` (+40/-6). The PHP diff is exactly the
+  `permission_callback` line swap plus the one new `is_same_origin_request()` method — no other
+  method in this file was touched. `git diff` for
+  `assets/js/bluerails-behavioral-beacon.js`, `includes/class-bluerails-settings.php`, and
+  `includes/class-bluerails-bot-detector.php` between those two commits is empty (confirmed
+  directly, not assumed) — the already-CONFIRMED consent/key-handling/field-parity logic from the
+  original review is untouched. No nonce/token system was added (matches the fix's own stated
+  scope). `REST_NAMESPACE`, `REST_ROUTE`, and `'methods' => 'POST'` are byte-identical to before —
+  the route's registration shape did not change beyond the `permission_callback` value.
+
+- **`php -l` on the changed file — pass.** `php -l
+  includes/class-bluerails-behavioral-beacon.php` → `No syntax errors detected` (re-run
+  independently, not taken from the fix author's report).
+
+- **New residual gap introduced by the fix — assessed, judged acceptable, not a new blocker.**
+  Case 6 above shows the exact-hostname match has no subdomain tolerance: a site whose `home_url()`
+  is the bare domain but which is also reachable (or whose visitor's browser resolves the page)
+  via a `www.` prefix would have its own legitimate beacon POST rejected, not exploited. This is
+  a false-reject (a legitimate signal silently dropped, since `handle_rest_request()` never runs)
+  rather than a false-accept — it does not reopen the forgery hole the original finding was about,
+  it can only ever cost signal, never leak the API key or forge a row. The fix's own docblock
+  already names this as a deliberate choice ("deliberately not a subdomain match... since
+  Origin/Referer here should always be THIS site, not a related domain"), and it is symmetric with
+  the original finding's own framing of "weak but non-zero" — the original finding never asked for
+  an airtight check, only for *some* check to replace none at all. I judge this an acceptable
+  residual, not a new blocking finding: it trades a small amount of false-negative signal loss on
+  a WordPress-hostname-configuration edge case for closing a complete, unauthenticated,
+  API-key-exfiltrating write path. The DoS/amplification finding and the lack of a request-body
+  size cap, both named in the original Important Issues, remain open and out of scope for this fix
+  — carried forward as non-blocking follow-up, consistent with the original review's own framing
+  of them as a separate, lower-severity issue.
+
+**Verdict: PASS.** The single BLOCKING finding from the original review (unauthenticated public
+REST route relaying attacker-chosen telemetry with the org's real API key) is closed by commit
+`5affc7c`, verified here by an independently written and independently run test against the real,
+unmodified code, ablated against the pre-fix commit to confirm the test is not vacuous. The fix
+stays in scope (one file, one line changed, one method added, no other logic touched). The
+DoS/amplification and missing-body-size-cap items from the original Important Issues/Suggestions
+remain open as non-blocking follow-up work, not conditions for this PASS.
