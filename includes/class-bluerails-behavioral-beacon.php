@@ -111,14 +111,42 @@ class Bluerails_Behavioral_Beacon {
 			array(
 				'methods'             => 'POST',
 				'callback'            => array( $this, 'handle_rest_request' ),
-				// Public and unauthenticated on purpose: the caller is an anonymous site visitor's
-				// browser, not a logged-in wp-admin user — there is no WP identity to require a
-				// nonce against. The upstream Bluerails endpoint is what actually authenticates
-				// this site (via the server-attached API key), same trust boundary as every other
-				// payload this plugin sends.
-				'permission_callback' => '__return_true',
+				// No WP identity to nonce against (anonymous visitor browser), but BLUE-1474
+				// review found this accepted a POST from anywhere with no page load at all —
+				// is_same_origin_request() below closes that bare-curl gap (weak vs a spoofed
+				// header, non-zero vs no check at all).
+				'permission_callback' => array( $this, 'is_same_origin_request' ),
 			)
 		);
+	}
+
+	/**
+	 * BLUE-1474 fix — permission_callback for the /behavioral route. Requires the request's
+	 * Origin header (falling back to Referer when Origin is absent, since some browser
+	 * contexts omit Origin on same-origin requests) to resolve to the same host as this
+	 * site's own home_url(). Hostname-only, exact match — deliberately not a subdomain match
+	 * like match_ai_referer(), since Origin/Referer here should always be THIS site, not a
+	 * related domain. A request with neither header, or a header naming a different host, is
+	 * rejected (WP core turns a false return into a 401/403 rest_forbidden response).
+	 */
+	public function is_same_origin_request( $request ) {
+		$home_host = strtolower( (string) wp_parse_url( home_url(), PHP_URL_HOST ) );
+		if ( empty( $home_host ) ) {
+			return false;
+		}
+
+		$origin = $request->get_header( 'origin' );
+		$source = ! empty( $origin ) ? $origin : $request->get_header( 'referer' );
+		if ( empty( $source ) ) {
+			return false;
+		}
+
+		$source_host = strtolower( (string) wp_parse_url( $source, PHP_URL_HOST ) );
+		if ( empty( $source_host ) ) {
+			return false;
+		}
+
+		return $source_host === $home_host;
 	}
 
 	/**
