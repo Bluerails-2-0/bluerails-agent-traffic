@@ -43,8 +43,9 @@ class Bluerails_Bot_Detector {
 	/**
 	 * BLUE-1473: a small, NAMED allow-list of AI-assistant referrer hostnames —
 	 * mirrors the backend's `AI_REFERER_ALLOWLIST` (visibility-web/app/features/
-	 * agent-traffic/ingest.ts). Deliberately not exhaustive: agentic browsers like
-	 * ChatGPT Atlas typically strip the Referer header on outbound navigation, so
+	 * agent-traffic/ingest.ts). Deliberately not exhaustive: browser-extension agentic
+	 * sessions (ChatGPT's post-Atlas Chrome extension/Work app, Anthropic's Claude for
+	 * Chrome) typically strip the Referer header on outbound navigation, so
 	 * this only ever catches the minority of AI-assistant traffic that still
 	 * carries one — a cheap, additive signal, not the primary detection path.
 	 */

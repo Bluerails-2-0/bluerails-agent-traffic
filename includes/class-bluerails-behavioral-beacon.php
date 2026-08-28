@@ -1,7 +1,10 @@
 <?php
 /**
- * BLUE-1474 — client-side behavioral signal for rendered-browser agent traffic (ChatGPT Atlas
- * class). Two halves:
+ * BLUE-1474 — client-side behavioral signal for rendered-browser agent traffic (the
+ * browser-extension agentic-session class — CORRECTED 2026-08-28: ChatGPT Atlas the standalone
+ * app was retired 2026-08-09; its successor is a Chrome extension + Work desktop app on the
+ * same architecture, and Anthropic's Claude for Chrome is a directly comparable live product).
+ * Two halves:
  *
  * 1. Enqueues `assets/js/bluerails-behavioral-beacon.js` in the footer of every front-end page,
  *    but ONLY when the site owner has explicitly turned the feature on (the "ship behind a flag"
