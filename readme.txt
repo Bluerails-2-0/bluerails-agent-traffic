@@ -4,7 +4,7 @@ Tags: ai bots, crawler, ai crawler, seo, analytics
 Requires at least: 5.8
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 1.0.0
+Stable tag: 1.1.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -136,12 +136,22 @@ custom table or schema.
 
 == Changelog ==
 
+= 1.1.0 =
+* Also reads the Referer header on a request whose User-Agent matches no known
+  bot signature, and reports it when it points at a small allow-list of
+  AI-assistant domains (ChatGPT, Perplexity, Claude, Gemini) — a low-coverage
+  fallback signal for agentic browsers (e.g. ChatGPT Atlas) whose UA carries no
+  distinguishing token.
+
 = 1.0.0 =
 * Initial release: AI-bot User-Agent detection, async POST to the configured
   Bluerails ingest endpoint, wp-admin settings screen, CDN and full-page-cache
   guidance.
 
 == Upgrade Notice ==
+
+= 1.1.0 =
+Adds a low-coverage referer-based fallback signal for AI-assistant traffic that presents no bot User-Agent.
 
 = 1.0.0 =
 Initial release.

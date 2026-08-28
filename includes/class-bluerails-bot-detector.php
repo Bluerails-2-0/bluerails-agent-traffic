@@ -40,6 +40,21 @@ class Bluerails_Bot_Detector {
 		'meta-externalagent'  => 'meta-externalagent',
 	);
 
+	/**
+	 * BLUE-1473: a small, NAMED allow-list of AI-assistant referrer hostnames —
+	 * mirrors the backend's `AI_REFERER_ALLOWLIST` (visibility-web/app/features/
+	 * agent-traffic/ingest.ts). Deliberately not exhaustive: agentic browsers like
+	 * ChatGPT Atlas typically strip the Referer header on outbound navigation, so
+	 * this only ever catches the minority of AI-assistant traffic that still
+	 * carries one — a cheap, additive signal, not the primary detection path.
+	 */
+	const AI_REFERER_DOMAINS = array(
+		'chatgpt.com',
+		'perplexity.ai',
+		'claude.ai',
+		'gemini.google.com',
+	);
+
 	public static function instance() {
 		if ( null === self::$instance ) {
 			self::$instance = new self();
@@ -75,13 +90,22 @@ class Bluerails_Bot_Detector {
 			return;
 		}
 		$user_agent = sanitize_text_field( wp_unslash( $_SERVER['HTTP_USER_AGENT'] ) );
+		// BLUE-1473: read on every request, independent of whether the UA matches —
+		// the referer-heuristic path below needs it even on a UA miss.
+		$referer = isset( $_SERVER['HTTP_REFERER'] ) ? esc_url_raw( wp_unslash( $_SERVER['HTTP_REFERER'] ) ) : '';
 
 		$match = $this->match_bot( $user_agent );
-		if ( null === $match ) {
+		if ( null !== $match ) {
+			$this->report_hit( $match['bot_name'], $match['matched_substring'], $referer );
 			return;
 		}
 
-		$this->report_hit( $match['bot_name'], $match['matched_substring'] );
+		// Only fires when the referer itself is on AI_REFERER_DOMAINS, so an
+		// ordinary human visit never reaches the endpoint; the backend
+		// independently re-verifies this same allow-list server-side.
+		if ( null !== $this->match_ai_referer( $referer ) ) {
+			$this->report_hit( '', $user_agent, $referer );
+		}
 	}
 
 	/**
@@ -101,12 +125,35 @@ class Bluerails_Bot_Detector {
 	}
 
 	/**
+	 * Returns the matched domain from AI_REFERER_DOMAINS, or null. Hostname-only
+	 * match (exact or subdomain) via wp_parse_url — never a substring scan of the
+	 * whole referer string, so `https://evil.example/?u=chatgpt.com` cannot spoof
+	 * a match. Mirrors the backend's `matchAiRefererDomain` (ingest.ts).
+	 */
+	private function match_ai_referer( $referer ) {
+		if ( empty( $referer ) ) {
+			return null;
+		}
+		$host = wp_parse_url( $referer, PHP_URL_HOST );
+		if ( empty( $host ) ) {
+			return null;
+		}
+		$host = strtolower( $host );
+		foreach ( self::AI_REFERER_DOMAINS as $domain ) {
+			if ( $host === $domain || substr( $host, -( strlen( $domain ) + 1 ) ) === '.' . $domain ) {
+				return $domain;
+			}
+		}
+		return null;
+	}
+
+	/**
 	 * Fire-and-forget POST to the configured ingest endpoint. Uses
 	 * blocking => false so this never adds latency to the visitor's
 	 * (bot's) page load, and returns immediately regardless of whether
 	 * the endpoint or API key are configured yet.
 	 */
-	private function report_hit( $bot_name, $matched_substring ) {
+	private function report_hit( $bot_name, $matched_ua_string, $referer ) {
 		$endpoint_url = get_option( 'bluerails_agent_traffic_endpoint_url', '' );
 		$api_key      = get_option( 'bluerails_agent_traffic_api_key', '' );
 
@@ -118,11 +165,15 @@ class Bluerails_Bot_Detector {
 
 		$payload = array(
 			'bot_name'          => $bot_name,
-			'matched_ua_string' => $matched_substring,
+			'matched_ua_string' => $matched_ua_string,
 			'page_path'         => $page_path,
 			'page_url'          => home_url( $page_path ),
 			'timestamp'         => gmdate( 'c' ),
 			'site_url'          => home_url(),
+			// BLUE-1473: always sent when present (even on a UA match) — the
+			// backend stores it for forensic value regardless of which path
+			// accepted the row; only a UA-miss uses it to decide identity.
+			'referer'           => $referer,
 		);
 
 		wp_remote_post(

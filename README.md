@@ -15,9 +15,14 @@ No build step, no Composer, no npm — plain PHP, installable as-is.
 2. Checks `$_SERVER['HTTP_USER_AGENT']` against a static, local list of known AI-crawler
    substrings (see `includes/class-bluerails-bot-detector.php`).
 3. On a match, builds a small JSON payload (bot name, matched UA substring, page path/URL,
-   timestamp) and sends it to your configured ingest endpoint via `wp_remote_post()` with
-   `blocking => false` — this never delays or blocks the page response for the visitor
+   timestamp, referer) and sends it to your configured ingest endpoint via `wp_remote_post()`
+   with `blocking => false` — this never delays or blocks the page response for the visitor
    (or bot) that triggered it.
+4. If the UA matches nothing, checks `$_SERVER['HTTP_REFERER']` against a small allow-list of
+   AI-assistant domains (ChatGPT, Perplexity, Claude, Gemini — `AI_REFERER_DOMAINS`) before
+   giving up. A match still sends the same payload shape, with an empty `bot_name` and the full
+   raw User-Agent as `matched_ua_string` — a low-coverage fallback signal for agentic browsers
+   (e.g. ChatGPT Atlas) whose UA carries no distinguishing token.
 
 ## Setup
 
@@ -48,9 +53,16 @@ Example payload body:
   "page_path": "/rooms/deluxe-suite",
   "page_url": "https://example-hotel.com/rooms/deluxe-suite",
   "timestamp": "2026-08-23T14:05:00+00:00",
-  "site_url": "https://example-hotel.com"
+  "site_url": "https://example-hotel.com",
+  "referer": "https://chatgpt.com/c/abc123"
 }
 ```
+
+`referer` (added, optional — empty string when absent) is the raw `Referer` header, sent
+whenever a request is reported at all. On a UA-miss + AI-referer-match row, `bot_name` is an
+empty string and `matched_ua_string` carries the full raw User-Agent (there is no matched
+substring to send) — the backend re-derives everything server-side either way; see the next
+section.
 
 The backend resolves `org_id` **server-side from the API key** — the plugin never sends an
 `org_id`, and the backend must never trust a client-supplied one. The endpoint URL and API
@@ -66,6 +78,17 @@ Bluerails' canonical `agent_bot_registry` and does not sync with it — this lis
 over time. That's expected and safe: the backend re-verifies every submitted bot name
 server-side, so a stale local list can under- or over-match on this plugin's side, but it
 never corrupts what actually lands in your dashboard.
+
+## Referer allow-list is a local copy too
+
+`AI_REFERER_DOMAINS` (chatgpt.com, perplexity.ai, claude.ai, gemini.google.com) mirrors the
+backend's own allow-list (`AI_REFERER_ALLOWLIST` in `visibility-web/app/features/agent-traffic/
+ingest.ts`) but is not synced with it — same drift model as the bot-signature list above. The
+backend independently re-classifies the submitted `referer` against its own copy, so a stale
+list here can under- or over-fire the POST but never mislabels what lands in the dashboard.
+Most AI-assistant traffic (agentic browsers like ChatGPT Atlas in particular) strips the
+Referer header entirely, so this only ever catches a minority of that traffic — it is a cheap,
+additive signal, not the primary detection path.
 
 ## Why `wp_loaded`, not `template_redirect`
 
