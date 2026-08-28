@@ -32,12 +32,13 @@ method for site owners who have no server or CDN log access of their own.
    allow-list of AI-assistant domains (ChatGPT, Perplexity, Claude, Gemini) before
    giving up. A match still sends the same payload shape, with an empty bot name and
    the full raw User-Agent in place of a matched substring — a low-coverage fallback
-   signal for agentic browsers (e.g. ChatGPT Atlas) whose UA carries no distinguishing
-   token.
+   signal for browser-extension agentic sessions (e.g. ChatGPT's Chrome extension/Work
+   app, Anthropic's Claude for Chrome) whose UA carries no distinguishing token.
 
 5. Optionally (OFF by default — Settings → Bluerails Agent Traffic → "Behavioral
    signal (beta)"): enable a small JS beacon that runs in visitors' browsers to help
-   identify rendered-browser AI agents (e.g. ChatGPT Atlas) that present as an
+   identify rendered-browser AI agents (browser-extension agentic sessions such as
+   ChatGPT's Chrome extension/Work app or Anthropic's Claude for Chrome) that present as an
    ordinary Chrome browser with no distinguishing User-Agent or Referer. Only runs
    after this site's own **Complianz** consent plugin reports visitor "statistics"
    consent — see "Behavioral signal beacon (opt-in, BLUE-1474)" below.
@@ -203,7 +204,8 @@ custom table or schema.
 = What is the behavioral signal, and do I need it? =
 
 An OFF-by-default, opt-in third signal that helps identify rendered-browser AI
-agents (e.g. ChatGPT Atlas) that the bot-UA and referer signals structurally cannot
+agents (browser-extension agentic sessions such as ChatGPT's Chrome extension/Work
+app or Anthropic's Claude for Chrome) that the bot-UA and referer signals structurally cannot
 see, because those agents present as an ordinary Chrome browser. It requires the
 Complianz consent plugin and visitor "statistics" consent — see "Behavioral signal
 beacon" above for the full disclosure. Most sites do not need to enable it; it's
@@ -219,7 +221,8 @@ run Complianz.
 = 1.2.0 =
 * Adds an OFF-by-default, opt-in behavioral signal: a small JS beacon that observes
   mouse-movement timing/quantization in visitors' browsers to help identify
-  rendered-browser AI agents (ChatGPT Atlas class) that present as an ordinary
+  rendered-browser AI agents (any browser-extension agentic session — ChatGPT's
+  Chrome extension/Work app, Anthropic's Claude for Chrome) that present as an ordinary
   Chrome browser. Gated on the site's own Complianz consent plugin reporting
   visitor "statistics" consent — never runs without it. Sent via this site's own
   new REST route, not directly to Bluerails, so the API key never reaches the
@@ -229,7 +232,8 @@ run Complianz.
 * Also reads the Referer header on a request whose User-Agent matches no known
   bot signature, and reports it when it points at a small allow-list of
   AI-assistant domains (ChatGPT, Perplexity, Claude, Gemini) — a low-coverage
-  fallback signal for agentic browsers (e.g. ChatGPT Atlas) whose UA carries no
+  fallback signal for browser-extension agentic sessions (e.g. ChatGPT's Chrome
+  extension/Work app, Anthropic's Claude for Chrome) whose UA carries no
   distinguishing token.
 
 = 1.0.0 =

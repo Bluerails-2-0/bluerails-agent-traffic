@@ -154,7 +154,7 @@ class Bluerails_Settings {
 	}
 
 	public function render_behavioral_section_intro() {
-		echo '<p>' . esc_html__( 'BLUE-1474: an additional, OFF-by-default signal that runs a small JS snippet in visitors\' browsers to help identify rendered-browser AI agents (e.g. ChatGPT Atlas) that present as an ordinary Chrome browser with no distinguishing User-Agent or Referer.', 'bluerails-agent-traffic' ) . '</p>';
+		echo '<p>' . esc_html__( 'BLUE-1474: an additional, OFF-by-default signal that runs a small JS snippet in visitors\' browsers to help identify rendered-browser AI agents (browser-extension agentic sessions such as ChatGPT\'s Chrome extension/Work app or Anthropic\'s Claude for Chrome) that present as an ordinary Chrome browser with no distinguishing User-Agent or Referer.', 'bluerails-agent-traffic' ) . '</p>';
 		echo '<p><strong>' . esc_html__( 'Requires Complianz.', 'bluerails-agent-traffic' ) . '</strong> ' . esc_html__( 'The beacon only ever runs after the site\'s own Complianz cookie-consent plugin reports the visitor granted "statistics" consent. If this site does not run Complianz, enabling this setting has no effect — the beacon never runs and nothing is sent. Support for other consent-management plugins (CookieYes, Borlabs, etc.) is not implemented yet.', 'bluerails-agent-traffic' ) . '</p>';
 		echo '<p>' . esc_html__( 'When it does run, the beacon observes mouse-movement timing on a session and sends a SCORE, never a hard bot/human verdict, as its own labeled row in your Agent Traffic dashboard, separate from AI-bot and referrer-based rows. Sessions with no fine pointer (mobile/touch) are never scored on pointer-absence alone.', 'bluerails-agent-traffic' ) . '</p>';
 	}

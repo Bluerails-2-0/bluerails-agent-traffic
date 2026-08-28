@@ -21,8 +21,9 @@ No build step, no Composer, no npm — plain PHP, installable as-is.
 4. If the UA matches nothing, checks `$_SERVER['HTTP_REFERER']` against a small allow-list of
    AI-assistant domains (ChatGPT, Perplexity, Claude, Gemini — `AI_REFERER_DOMAINS`) before
    giving up. A match still sends the same payload shape, with an empty `bot_name` and the full
-   raw User-Agent as `matched_ua_string` — a low-coverage fallback signal for agentic browsers
-   (e.g. ChatGPT Atlas) whose UA carries no distinguishing token.
+   raw User-Agent as `matched_ua_string` — a low-coverage fallback signal for browser-extension
+   agentic sessions (e.g. ChatGPT's Chrome extension/Work app, Anthropic's Claude for Chrome)
+   whose UA carries no distinguishing token.
 5. (BLUE-1474, OFF by default) If enabled on the settings screen AND the site runs Complianz
    with visitor "statistics" consent granted, enqueues a small JS beacon
    (`assets/js/bluerails-behavioral-beacon.js`) that observes mouse-movement timing/quantization
@@ -112,20 +113,24 @@ backend's own allow-list (`AI_REFERER_ALLOWLIST` in `visibility-web/app/features
 ingest.ts`) but is not synced with it — same drift model as the bot-signature list above. The
 backend independently re-classifies the submitted `referer` against its own copy, so a stale
 list here can under- or over-fire the POST but never mislabels what lands in the dashboard.
-Most AI-assistant traffic (agentic browsers like ChatGPT Atlas in particular) strips the
-Referer header entirely, so this only ever catches a minority of that traffic — it is a cheap,
-additive signal, not the primary detection path.
+Most AI-assistant traffic (browser-extension agentic sessions in particular — CORRECTED
+2026-08-28: ChatGPT Atlas the standalone app was retired 2026-08-09; its successor is a Chrome
+extension + Work desktop app on the same architecture, and Anthropic's Claude for Chrome is a
+directly comparable live product) strips the Referer header entirely, so this only ever catches
+a minority of that traffic — it is a cheap, additive signal, not the primary detection path.
 
 ## Behavioral signal beacon (opt-in, BLUE-1474)
 
 A THIRD identification path, structurally different from the two above: it can only be
 observed **client-side**, because it's mouse-movement behavior, not a request header. Ships
 OFF by default (`bluerails_agent_traffic_behavioral_enabled`, a settings-screen checkbox
-independent of the endpoint/API-key config) — closes the gap left by rendered-browser agents
-(ChatGPT Atlas class) that present as an ordinary Chrome UA with no distinguishing header at
-all, confirmed against OpenAI's own OWL architecture writeup (`.claude/ticket-reviews/
-BLUE-1474.md` claim 2) to actually execute page JS and dispatch real pointer events — unlike a
-raw-fetch training crawler, which never runs this code path at all.
+independent of the endpoint/API-key config) — closes the gap left by rendered-browser agentic
+sessions (any browser-extension agent: ChatGPT's post-Atlas Chrome extension/Work app,
+Anthropic's Claude for Chrome, and equivalents) that present as an ordinary Chrome UA with no
+distinguishing header at all, confirmed against OpenAI's own OWL architecture writeup for Atlas
+(`.claude/ticket-reviews/BLUE-1474.md` claim 2 — the same Chromium-extension architecture
+applies to its successor and to Claude for Chrome) to actually execute page JS and dispatch real
+pointer events — unlike a raw-fetch training crawler, which never runs this code path at all.
 
 **Consent mechanism chosen: Complianz's documented public JS API**
 (`cmplz_has_consent(category)` / `cmplz_enable_category` / `cmplz_status_change` — see
