@@ -459,3 +459,58 @@ before this PR merges, per the Important Issues section above).
   are sound; the new public REST route's authorization model is not (see Important Issues).
 - No automated test suite exists in this repo (confirmed, consistent with BLUE-1473's review) —
   not introduced by this diff either; a pre-existing gap.
+
+## Fix verification (2026-08-28)
+
+Verified commit `5affc7c` ("BLUE-1474: require Origin/Referer to match home_url() on the
+behavioral REST route") against the single BLOCKING finding above, by reading the commit
+diff and the resulting file state directly
+(`includes/class-bluerails-behavioral-beacon.php`) — not the diff alone.
+
+- **`register_rest_route()`'s `permission_callback` — fixed.** No longer `'__return_true'`.
+  It is now `array( $this, 'is_same_origin_request' )`, a new method that requires the
+  request's `Origin` header (falling back to `Referer` when `Origin` is absent — some
+  browser contexts omit `Origin` on a same-origin request) to resolve, via
+  `wp_parse_url(..., PHP_URL_HOST)`, to the exact same host as `home_url()`. A request
+  with neither header, or a header naming a different host, returns `false`, which WP
+  core turns into a `rest_forbidden` 401/403 response before `handle_rest_request()` ever
+  runs.
+- **Re-ran the review's own attack, against the actual shipped code.** Built a stub-WP
+  harness (`add_action`/`home_url`/`wp_parse_url`/`WP_REST_Request::get_header` stubbed,
+  the real, unmodified `is_same_origin_request()` `require`d, not rewritten) and called it
+  with four cases:
+  ```
+  Case A (legit same-origin, Origin header set) => ALLOWED
+  Case B (bare curl, no headers)                => REJECTED
+  Case C (forged Origin, different host)        => REJECTED
+  Case D (no Origin, same-host Referer)         => ALLOWED
+  ```
+  Case B is the review's own PoC (`curl -X POST ... -d '{"behavioral": ...}'` with no
+  headers) — it is now REJECTED, where it was previously ALLOWED (202) before this fix.
+  Case A confirms the real beacon's own POST (same-origin, per Claim 3/4's already-verified
+  design — the JS posts to `rest_url()` on the same domain, which a same-origin `fetch`/
+  `sendBeacon` sends with an `Origin` header) is unaffected and still reaches
+  `handle_rest_request()`.
+- **Ablated the harness against the pre-fix code** (`git show
+  <parent-commit>:includes/class-bluerails-behavioral-beacon.php`) to confirm the test
+  isn't vacuous: the pre-fix file's `permission_callback` is the literal string
+  `'__return_true'`, unconditionally `true` regardless of any header — i.e., Case B would
+  have been ALLOWED under the old code, the exact gap this review flagged. The harness
+  distinguishes fixed from broken, not just restates the fix.
+- **Sanity check:** `php -l includes/class-bluerails-behavioral-beacon.php` → `No syntax
+  errors detected`. The diff is additive (one new method, one line changed in
+  `register_rest_route()`) — the file's line count grew by 34, within the fix's own
+  15–40 line budget; no other function in this file, the settings screen, or the beacon
+  JS was touched.
+- **Not fixed here / explicitly out of scope, per this fix's own boundary (matches the
+  review's own "at minimum" framing, not the fuller alternative it also named):** this is
+  an Origin/Referer host check, not a per-page-load token. It does **not** stop a
+  determined attacker who can freely set `Origin`/`Referer` on a raw request (e.g. `curl
+  -H "Origin: https://<the-victim-site>"`), and it does not address the related,
+  same-root-cause DoS/amplification finding (unbounded `wp_remote_post()` relay, no
+  per-IP/per-origin rate limit at the WP layer) also named in Important Issues — both
+  were explicitly out of scope for this fix pass, which targeted only the single BLOCKING
+  anti-forgery finding.
+
+**Verdict: left to the next independent reviewer**, per this fix pass's own scope — not
+flipped to PASS here.
