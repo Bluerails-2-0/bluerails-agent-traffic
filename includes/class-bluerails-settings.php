@@ -11,11 +11,12 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 class Bluerails_Settings {
 
-	const OPTION_GROUP    = 'bluerails_agent_traffic_options';
-	const PAGE_SLUG       = 'bluerails-agent-traffic';
-	const OPT_ENDPOINT    = 'bluerails_agent_traffic_endpoint_url';
-	const OPT_API_KEY     = 'bluerails_agent_traffic_api_key';
-	const OPT_HAS_CDN     = 'bluerails_agent_traffic_has_cdn';
+	const OPTION_GROUP      = 'bluerails_agent_traffic_options';
+	const PAGE_SLUG         = 'bluerails-agent-traffic';
+	const OPT_ENDPOINT      = 'bluerails_agent_traffic_endpoint_url';
+	const OPT_API_KEY       = 'bluerails_agent_traffic_api_key';
+	const OPT_HAS_CDN       = 'bluerails_agent_traffic_has_cdn';
+	const OPT_BEHAVIORAL    = 'bluerails_agent_traffic_behavioral_enabled';
 
 	private static $instance = null;
 
@@ -58,6 +59,11 @@ class Bluerails_Settings {
 			'sanitize_callback' => array( $this, 'sanitize_yes_no' ),
 			'default'           => '',
 		) );
+		register_setting( self::OPTION_GROUP, self::OPT_BEHAVIORAL, array(
+			'type'              => 'string',
+			'sanitize_callback' => array( $this, 'sanitize_yes_no' ),
+			'default'           => '',
+		) );
 
 		add_settings_section(
 			'bluerails_main_section',
@@ -88,6 +94,21 @@ class Bluerails_Settings {
 			array( $this, 'render_cdn_field' ),
 			self::PAGE_SLUG,
 			'bluerails_main_section'
+		);
+
+		add_settings_section(
+			'bluerails_behavioral_section',
+			__( 'Behavioral signal (beta)', 'bluerails-agent-traffic' ),
+			array( $this, 'render_behavioral_section_intro' ),
+			self::PAGE_SLUG
+		);
+
+		add_settings_field(
+			self::OPT_BEHAVIORAL,
+			__( 'Enable behavioral signal', 'bluerails-agent-traffic' ),
+			array( $this, 'render_behavioral_field' ),
+			self::PAGE_SLUG,
+			'bluerails_behavioral_section'
 		);
 	}
 
@@ -130,6 +151,22 @@ class Bluerails_Settings {
 			esc_html__( 'Yes, this site sits behind a CDN (Cloudflare, CloudFront, etc.)', 'bluerails-agent-traffic' )
 		);
 		echo '<p class="description">' . esc_html__( 'If a CDN serves cached pages directly from its edge, bot hits on those cached pages never reach WordPress and this plugin cannot see them. Answering "Yes" only turns on the reminder notice below — it does not disable capture.', 'bluerails-agent-traffic' ) . '</p>';
+	}
+
+	public function render_behavioral_section_intro() {
+		echo '<p>' . esc_html__( 'BLUE-1474: an additional, OFF-by-default signal that runs a small JS snippet in visitors\' browsers to help identify rendered-browser AI agents (browser-extension agentic sessions such as ChatGPT\'s Chrome extension/Work app or Anthropic\'s Claude for Chrome) that present as an ordinary Chrome browser with no distinguishing User-Agent or Referer.', 'bluerails-agent-traffic' ) . '</p>';
+		echo '<p><strong>' . esc_html__( 'Requires Complianz.', 'bluerails-agent-traffic' ) . '</strong> ' . esc_html__( 'The beacon only ever runs after the site\'s own Complianz cookie-consent plugin reports the visitor granted "statistics" consent. If this site does not run Complianz, enabling this setting has no effect — the beacon never runs and nothing is sent. Support for other consent-management plugins (CookieYes, Borlabs, etc.) is not implemented yet.', 'bluerails-agent-traffic' ) . '</p>';
+		echo '<p>' . esc_html__( 'When it does run, the beacon observes mouse-movement timing on a session and sends a SCORE, never a hard bot/human verdict, as its own labeled row in your Agent Traffic dashboard, separate from AI-bot and referrer-based rows. Sessions with no fine pointer (mobile/touch) are never scored on pointer-absence alone.', 'bluerails-agent-traffic' ) . '</p>';
+	}
+
+	public function render_behavioral_field() {
+		$value = get_option( self::OPT_BEHAVIORAL, '' );
+		printf(
+			'<label><input type="checkbox" name="%1$s" value="1" %2$s /> %3$s</label>',
+			esc_attr( self::OPT_BEHAVIORAL ),
+			checked( '1', $value, false ),
+			esc_html__( 'Yes, enable the behavioral signal beacon on this site (requires Complianz for visitor consent — see above)', 'bluerails-agent-traffic' )
+		);
 	}
 
 	public function render_settings_page() {
