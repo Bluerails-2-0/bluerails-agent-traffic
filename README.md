@@ -221,6 +221,20 @@ No database schema — WordPress options only: `bluerails_agent_traffic_endpoint
 `bluerails_agent_traffic_behavioral_enabled` (BLUE-1474, OFF by default), all via the standard
 WordPress Options API.
 
+## Cutting a release
+
+The live dashboard's plugin-download link (`discovery.bluerails.com` → Settings) points at
+`releases/latest/download/bluerails-agent-traffic.zip` — a stable filename, not tied to a
+version number, so the link never needs a code change. Every release's assets MUST include a
+copy of the zip under that exact stable name (in addition to the versioned one), or the
+dashboard link silently breaks the moment this release becomes "latest":
+
+```bash
+cp bluerails-agent-traffic-X.Y.Z.zip bluerails-agent-traffic.zip
+gh release create vX.Y.Z bluerails-agent-traffic-X.Y.Z.zip bluerails-agent-traffic.zip \
+  --repo Bluerails-2-0/bluerails-agent-traffic --title "..." --notes "..."
+```
+
 ## License
 
 GPL-2.0-or-later. See `LICENSE`.
