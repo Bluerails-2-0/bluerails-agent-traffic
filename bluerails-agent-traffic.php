@@ -4,7 +4,7 @@
  * Plugin URI:        https://github.com/Bluerails-2-0/bluerails-wp-plugin
  * Description:       Detects AI-bot crawler traffic (GPTBot, ClaudeBot, PerplexityBot, etc.) on this
  *                     WordPress site and reports it to your Bluerails Discovery Agent Traffic dashboard.
- * Version:           1.0.0
+ * Version:           1.1.0
  * Requires at least: 5.8
  * Requires PHP:      7.4
  * Author:            Bluerails
@@ -21,7 +21,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'BLUERAILS_AGENT_TRAFFIC_VERSION', '1.0.0' );
+define( 'BLUERAILS_AGENT_TRAFFIC_VERSION', '1.1.0' );
 define( 'BLUERAILS_AGENT_TRAFFIC_FILE', __FILE__ );
 define( 'BLUERAILS_AGENT_TRAFFIC_DIR', plugin_dir_path( __FILE__ ) );
 
