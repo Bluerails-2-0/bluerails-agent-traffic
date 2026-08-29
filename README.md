@@ -230,8 +230,11 @@ copy of the zip under that exact stable name (in addition to the versioned one),
 dashboard link silently breaks the moment this release becomes "latest":
 
 ```bash
-cp bluerails-agent-traffic-X.Y.Z.zip bluerails-agent-traffic.zip
-gh release create vX.Y.Z bluerails-agent-traffic-X.Y.Z.zip bluerails-agent-traffic.zip \
+mkdir -p /tmp/plugin-zip/bluerails-agent-traffic
+rsync -a --exclude='.git' --exclude='.gitignore' --exclude='README.md' --exclude='REVIEW-*.md' ./ /tmp/plugin-zip/bluerails-agent-traffic/
+( cd /tmp/plugin-zip && zip -r bluerails-agent-traffic-X.Y.Z.zip bluerails-agent-traffic )
+cp /tmp/plugin-zip/bluerails-agent-traffic-X.Y.Z.zip bluerails-agent-traffic.zip
+gh release create vX.Y.Z /tmp/plugin-zip/bluerails-agent-traffic-X.Y.Z.zip bluerails-agent-traffic.zip \
   --repo Bluerails-2-0/bluerails-agent-traffic --title "..." --notes "..."
 ```
 
