@@ -62,7 +62,7 @@ class Bluerails_Settings {
 		register_setting( self::OPTION_GROUP, self::OPT_BEHAVIORAL, array(
 			'type'              => 'string',
 			'sanitize_callback' => array( $this, 'sanitize_yes_no' ),
-			'default'           => '',
+			'default'           => '1',
 		) );
 
 		add_settings_section(

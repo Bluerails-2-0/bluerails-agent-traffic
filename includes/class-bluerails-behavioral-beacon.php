@@ -7,10 +7,11 @@
  * Two halves:
  *
  * 1. Enqueues `assets/js/bluerails-behavioral-beacon.js` in the footer of every front-end page,
- *    but ONLY when the site owner has explicitly turned the feature on (the "ship behind a flag"
- *    ticket AC — a NEW, separate opt-in from the existing endpoint/API-key configuration, default
- *    OFF) and the endpoint/API key are both configured (mirrors Bot_Detector::report_hit's own
- *    "nothing to send yet" skip). The beacon's OWN first action, once loaded, is a visitor-consent
+ *    but ONLY when the site owner has the feature on (a separate toggle from the existing
+ *    endpoint/API-key configuration, ON by default as of 1.3.0 — see `bluerails-agent-traffic.php`'s
+ *    activation/migration) and the endpoint/API key are both configured (mirrors
+ *    Bot_Detector::report_hit's own "nothing to send yet" skip). The beacon's OWN first action,
+ *    once loaded, is a visitor-consent
  *    check (Complianz) — this class does not gate on visitor consent itself, because that state
  *    lives client-side (see the JS file's header for why).
  * 2. Registers a same-origin REST proxy the beacon POSTs its feature summary to. A proxy, not a
