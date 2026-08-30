@@ -4,7 +4,7 @@
  * Plugin URI:        https://github.com/Bluerails-2-0/bluerails-wp-plugin
  * Description:       Detects AI-bot crawler traffic (GPTBot, ClaudeBot, PerplexityBot, etc.) on this
  *                     WordPress site and reports it to your Bluerails Discovery Agent Traffic dashboard.
- * Version:           1.2.0
+ * Version:           1.3.0
  * Requires at least: 5.8
  * Requires PHP:      7.4
  * Author:            Bluerails
@@ -21,7 +21,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'BLUERAILS_AGENT_TRAFFIC_VERSION', '1.2.0' );
+define( 'BLUERAILS_AGENT_TRAFFIC_VERSION', '1.3.0' );
 define( 'BLUERAILS_AGENT_TRAFFIC_FILE', __FILE__ );
 define( 'BLUERAILS_AGENT_TRAFFIC_DIR', plugin_dir_path( __FILE__ ) );
 
@@ -42,6 +42,22 @@ function bluerails_agent_traffic_init() {
 add_action( 'plugins_loaded', 'bluerails_agent_traffic_init' );
 
 /**
+ * One-time upgrade migration: flips the behavioral-signal option to enabled.
+ * Unconditional and single-fire because a stored '' is indistinguishable
+ * between "never touched this checkbox" and "explicitly unchecked it" — the
+ * Settings API rewrites this option on every settings-page save regardless of
+ * intent, so only a dedicated migrated-flag (never the plugin version) can
+ * mark this done without ever re-firing and re-flipping a later opt-out.
+ */
+function bluerails_agent_traffic_migrate_behavioral_default() {
+	if ( '1' !== get_option( 'bluerails_agent_traffic_behavioral_default_migrated', '' ) ) {
+		update_option( 'bluerails_agent_traffic_behavioral_enabled', '1' );
+		update_option( 'bluerails_agent_traffic_behavioral_default_migrated', '1' );
+	}
+}
+add_action( 'plugins_loaded', 'bluerails_agent_traffic_migrate_behavioral_default' );
+
+/**
  * Activation: seed default options so the settings screen has sane
  * values before the site owner ever visits it. No DB table, no schema.
  */
@@ -49,9 +65,9 @@ function bluerails_agent_traffic_activate() {
 	add_option( 'bluerails_agent_traffic_endpoint_url', 'https://discovery.bluerails.com/api/agent-traffic-ingest' );
 	add_option( 'bluerails_agent_traffic_api_key', '' );
 	add_option( 'bluerails_agent_traffic_has_cdn', '' );
-	// BLUE-1474: OFF by default — a separate opt-in from the endpoint/API-key config above,
-	// since this feature also depends on the site's own visitor-consent tooling being in place.
-	add_option( 'bluerails_agent_traffic_behavioral_enabled', '' );
+	// ON by default as of 1.3.0 — still gated fail-closed by the Complianz
+	// consent check in Bluerails_Behavioral_Beacon::is_enabled()/consentGate().
+	add_option( 'bluerails_agent_traffic_behavioral_enabled', '1' );
 }
 register_activation_hook( __FILE__, 'bluerails_agent_traffic_activate' );
 

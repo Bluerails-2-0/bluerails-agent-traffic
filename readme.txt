@@ -4,7 +4,7 @@ Tags: ai bots, crawler, ai crawler, seo, analytics
 Requires at least: 5.8
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 1.2.0
+Stable tag: 1.3.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -35,17 +35,18 @@ method for site owners who have no server or CDN log access of their own.
    signal for browser-extension agentic sessions (e.g. ChatGPT's Chrome extension/Work
    app, Anthropic's Claude for Chrome) whose UA carries no distinguishing token.
 
-5. Optionally (OFF by default — Settings → Bluerails Agent Traffic → "Behavioral
-   signal (beta)"): enable a small JS beacon that runs in visitors' browsers to help
+5. A small JS beacon (enabled by default as of 1.3.0 — Settings → Bluerails Agent
+   Traffic → "Behavioral signal (beta)") that runs in visitors' browsers to help
    identify rendered-browser AI agents (browser-extension agentic sessions such as
    ChatGPT's Chrome extension/Work app or Anthropic's Claude for Chrome) that present as an
    ordinary Chrome browser with no distinguishing User-Agent or Referer. Only runs
    after this site's own **Complianz** consent plugin reports visitor "statistics"
-   consent — see "Behavioral signal beacon (opt-in, BLUE-1474)" below.
+   consent, and can be turned off from the settings screen — see "Behavioral signal
+   beacon (BLUE-1474)" below.
 
 No database table and no custom schema are used — the plugin stores its settings as
 entries in the standard WordPress Options API (ingest endpoint URL, API key, a CDN
-yes/no flag, and the behavioral-signal opt-in flag).
+yes/no flag, and the behavioral-signal enablement flag).
 
 = External services =
 
@@ -89,14 +90,14 @@ your account server-side.
 By configuring this plugin you agree to Bluerails' Terms of Service
 (https://bluerails.com/terms) and Privacy Policy (https://bluerails.com/privacy).
 
-= Behavioral signal beacon (opt-in, BLUE-1474) =
+= Behavioral signal beacon (on by default, BLUE-1474) =
 
-A THIRD, separate signal, **OFF by default**, enabled only via the new "Behavioral
-signal (beta)" checkbox on the settings screen (an opt-in independent from the
-endpoint URL/API key configuration above). Unlike the bot-UA and referer signals,
-which run entirely in PHP, this one runs a small JS file
-(`assets/js/bluerails-behavioral-beacon.js`) in the visitor's own browser, because
-mouse-movement timing can only be observed client-side.
+A THIRD, separate signal, **enabled by default as of 1.3.0**, controlled via the
+"Behavioral signal (beta)" checkbox on the settings screen (independent from the
+endpoint URL/API key configuration above — unchecking it turns the beacon off).
+Unlike the bot-UA and referer signals, which run entirely in PHP, this one runs a
+small JS file (`assets/js/bluerails-behavioral-beacon.js`) in the visitor's own
+browser, because mouse-movement timing can only be observed client-side.
 
 **Consent — read this before enabling.** The beacon never runs at all unless this
 site's own **Complianz** cookie-consent plugin (https://wordpress.org/plugins/complianz-gdpr/)
@@ -145,9 +146,10 @@ alone, to avoid mislabeling ordinary mobile guests.
   time. This is expected: the Bluerails backend re-verifies every submitted bot name
   server-side, so a stale local list can under- or over-match on the plugin's side,
   but it can never corrupt what lands in your dashboard.
-* **Behavioral signal requires Complianz**: the opt-in beacon (see above) only runs
-  on sites using the Complianz consent plugin. Sites using a different
-  consent-management plugin, or none at all, cannot use this signal yet.
+* **Behavioral signal requires Complianz**: the beacon (see above) only runs on
+  sites using the Complianz consent plugin, even though it is enabled by default.
+  Sites using a different consent-management plugin, or none at all, stay inert —
+  the beacon loads but never activates and cannot use this signal yet.
 
 == Installation ==
 
@@ -203,20 +205,26 @@ custom table or schema.
 
 = What is the behavioral signal, and do I need it? =
 
-An OFF-by-default, opt-in third signal that helps identify rendered-browser AI
-agents (browser-extension agentic sessions such as ChatGPT's Chrome extension/Work
+A third signal, enabled by default as of 1.3.0, that helps identify rendered-browser
+AI agents (browser-extension agentic sessions such as ChatGPT's Chrome extension/Work
 app or Anthropic's Claude for Chrome) that the bot-UA and referer signals structurally cannot
 see, because those agents present as an ordinary Chrome browser. It requires the
-Complianz consent plugin and visitor "statistics" consent — see "Behavioral signal
-beacon" above for the full disclosure. Most sites do not need to enable it; it's
-aimed at sites that want the most complete picture of AI-agent traffic and already
-run Complianz.
+Complianz consent plugin and visitor "statistics" consent to ever activate — see
+"Behavioral signal beacon" above for the full disclosure. You can turn it off from
+the settings screen if you'd rather not run it.
 
 == Screenshots ==
 
 1. Settings screen — configure the ingest endpoint URL, API key, and CDN flag.
 
 == Changelog ==
+
+= 1.3.0 =
+* Flips the behavioral signal beacon's default from OFF to ON, for both new
+  installs and existing installs (a one-time upgrade migration; a site that later
+  unchecks the box stays unchecked on any subsequent update). The Complianz
+  consent gate is unchanged — the beacon still never runs without visitor
+  "statistics" consent.
 
 = 1.2.0 =
 * Adds an OFF-by-default, opt-in behavioral signal: a small JS beacon that observes
@@ -242,6 +250,9 @@ run Complianz.
   guidance.
 
 == Upgrade Notice ==
+
+= 1.3.0 =
+Behavioral signal beacon is now ON by default (still requires Complianz visitor consent to run; turn it off in Settings → Bluerails Agent Traffic if you don't want it).
 
 = 1.2.0 =
 Adds an OFF-by-default, opt-in behavioral signal for rendered-browser AI agents (requires Complianz for visitor consent).
