@@ -1,0 +1,55 @@
+name: Check PUC library drift
+
+# BLUE-1537: this repo vendors YahnisElsts/plugin-update-checker directly (no
+# Composer — see README) so Dependabot cannot see or track it. This workflow
+# checks weekly for a newer upstream release and opens a PR re-vendoring the
+# library when one is found. No auto-merge — a human reviews the diff.
+on:
+  schedule:
+    - cron: "0 6 * * 1" # every Monday 06:00 UTC
+  workflow_dispatch: {}
+
+# Repo default is default_workflow_permissions: read — without this block the
+# push/PR steps below fail closed with a 403.
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  check-drift:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compare vendored PUC version against latest upstream release
+        id: check
+        run: bash .github/scripts/check-puc-update.sh
+
+      - name: Open re-vendor PR
+        if: steps.check.outputs.no_drift == 'false'
+        env:
+          LATEST_VERSION: ${{ steps.check.outputs.latest_version }}
+        run: |
+          set -euo pipefail
+          version="$LATEST_VERSION"
+          branch="puc-update-${version}"
+
+          if [ "$(gh pr list --head "$branch" --state open --json number --jq 'length')" -gt 0 ]; then
+            echo "PR for $branch already open — skipping."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$branch"
+          git add includes/plugin-update-checker
+          git commit -m "chore: re-vendor plugin-update-checker to v${version}"
+          git push origin "$branch" --force
+
+          gh pr create \
+            --title "chore: re-vendor Plugin Update Checker to v${version}" \
+            --body "Automated (BLUE-1537): upstream [YahnisElsts/plugin-update-checker](https://github.com/YahnisElsts/plugin-update-checker) released v${version}. This re-vendors \`includes/plugin-update-checker/\` wholesale from the tagged release archive. **No auto-merge** — please review the diff before merging." \
+            --base main \
+            --head "$branch"
