@@ -21,6 +21,15 @@ current_version=$(echo "$current_line" | sed -E 's/^[[:space:]]*\*[[:space:]]*Pl
 latest_tag=$(gh api "repos/$REPO_SLUG/releases/latest" --jq '.tag_name')
 latest_version="${latest_tag#v}" # strip the 'v' prefix upstream uses (v5.7), vendored string has none (5.7)
 
+# Reject anything that isn't a bare X.Y version before it's used to build a
+# branch name, a shell command, or a download URL — closes most of the
+# injection surface as defense-in-depth, and stops a 3-component upstream tag
+# (e.g. 5.7.1) from producing a permanent drift/PR loop.
+if ! [[ "$latest_version" =~ ^[0-9]+\.[0-9]+$ ]]; then
+  echo "::error::latest release tag '$latest_tag' does not match expected X.Y version shape — refusing to proceed"
+  exit 1
+fi
+
 echo "vendored=$current_version latest=$latest_version"
 
 if [ "$current_version" = "$latest_version" ]; then
@@ -34,7 +43,7 @@ echo "latest_version=$latest_version" >>"$GITHUB_OUTPUT"
 echo "Drift detected: vendored=$current_version latest=$latest_version — re-vendoring."
 
 work=$(mktemp -d)
-curl -sSL -o "$work/puc.zip" "https://github.com/$REPO_SLUG/archive/refs/tags/v${latest_version}.zip"
+curl -fsSL -o "$work/puc.zip" "https://github.com/$REPO_SLUG/archive/refs/tags/v${latest_version}.zip"
 unzip -q "$work/puc.zip" -d "$work"
 extracted="$work/plugin-update-checker-${latest_version}"
 [ -d "$extracted" ] || { echo "::error::expected extracted dir $extracted not found in release archive"; exit 1; }

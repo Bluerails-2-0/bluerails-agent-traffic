@@ -29,9 +29,11 @@ jobs:
 
       - name: Open re-vendor PR
         if: steps.check.outputs.no_drift == 'false'
+        env:
+          LATEST_VERSION: ${{ steps.check.outputs.latest_version }}
         run: |
           set -euo pipefail
-          version="${{ steps.check.outputs.latest_version }}"
+          version="$LATEST_VERSION"
           branch="puc-update-${version}"
 
           if [ "$(gh pr list --head "$branch" --state open --json number --jq 'length')" -gt 0 ]; then
