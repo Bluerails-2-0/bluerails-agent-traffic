@@ -4,7 +4,7 @@
  * Plugin URI:        https://github.com/Bluerails-2-0/bluerails-wp-plugin
  * Description:       Detects AI-bot crawler traffic (GPTBot, ClaudeBot, PerplexityBot, etc.) on this
  *                     WordPress site and reports it to your Bluerails Discovery Agent Traffic dashboard.
- * Version:           1.3.0
+ * Version:           1.3.1
  * Requires at least: 5.8
  * Requires PHP:      7.4
  * Author:            Bluerails
@@ -12,6 +12,7 @@
  * License:            GPL v2 or later
  * License URI:       https://www.gnu.org/licenses/gpl-2.0.html
  * Text Domain:       bluerails-agent-traffic
+ * Update URI:        https://github.com/Bluerails-2-0/bluerails-agent-traffic
  *
  * @package Bluerails_Agent_Traffic
  */
@@ -21,13 +22,14 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'BLUERAILS_AGENT_TRAFFIC_VERSION', '1.3.0' );
+define( 'BLUERAILS_AGENT_TRAFFIC_VERSION', '1.3.1' );
 define( 'BLUERAILS_AGENT_TRAFFIC_FILE', __FILE__ );
 define( 'BLUERAILS_AGENT_TRAFFIC_DIR', plugin_dir_path( __FILE__ ) );
 
 require_once BLUERAILS_AGENT_TRAFFIC_DIR . 'includes/class-bluerails-settings.php';
 require_once BLUERAILS_AGENT_TRAFFIC_DIR . 'includes/class-bluerails-bot-detector.php';
 require_once BLUERAILS_AGENT_TRAFFIC_DIR . 'includes/class-bluerails-behavioral-beacon.php';
+require_once BLUERAILS_AGENT_TRAFFIC_DIR . 'includes/plugin-update-checker/plugin-update-checker.php';
 
 /**
  * Boot the plugin. Settings page, bot detector, and the behavioral beacon are
@@ -40,6 +42,30 @@ function bluerails_agent_traffic_init() {
 	Bluerails_Behavioral_Beacon::instance();
 }
 add_action( 'plugins_loaded', 'bluerails_agent_traffic_init' );
+
+/**
+ * Point WP core's native update mechanism at this repo's GitHub Releases, so an
+ * installed site sees "Update available" the same way it would for a WP.org
+ * plugin instead of needing a manual zip re-upload for every release.
+ */
+function bluerails_agent_traffic_init_update_checker() {
+	$update_checker = \YahnisElsts\PluginUpdateChecker\v5\PucFactory::buildUpdateChecker(
+		'https://github.com/Bluerails-2-0/bluerails-agent-traffic',
+		BLUERAILS_AGENT_TRAFFIC_FILE,
+		'bluerails-agent-traffic'
+	);
+	// The stable-named zip is the asset that always exists on every release
+	// (see README.md "Cutting a release"); the versioned zip alongside it would
+	// otherwise be picked instead depending on GitHub's asset ordering.
+	// REQUIRE (not the PUC default PREFER) so a future release that omits this
+	// asset fails closed — no silent fallback to GitHub's raw, unprocessed
+	// source-code archive as the "update" (independent review finding, BLUE-1534).
+	$update_checker->getVcsApi()->enableReleaseAssets(
+		'/^bluerails-agent-traffic\.zip$/',
+		\YahnisElsts\PluginUpdateChecker\v5\Vcs\Api::REQUIRE_RELEASE_ASSETS
+	);
+}
+add_action( 'plugins_loaded', 'bluerails_agent_traffic_init_update_checker' );
 
 /**
  * Activation: seed default options so the settings screen has sane
