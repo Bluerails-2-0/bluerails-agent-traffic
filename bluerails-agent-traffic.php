@@ -57,7 +57,13 @@ function bluerails_agent_traffic_init_update_checker() {
 	// The stable-named zip is the asset that always exists on every release
 	// (see README.md "Cutting a release"); the versioned zip alongside it would
 	// otherwise be picked instead depending on GitHub's asset ordering.
-	$update_checker->getVcsApi()->enableReleaseAssets( '/^bluerails-agent-traffic\.zip$/' );
+	// REQUIRE (not the PUC default PREFER) so a future release that omits this
+	// asset fails closed — no silent fallback to GitHub's raw, unprocessed
+	// source-code archive as the "update" (independent review finding, BLUE-1534).
+	$update_checker->getVcsApi()->enableReleaseAssets(
+		'/^bluerails-agent-traffic\.zip$/',
+		\YahnisElsts\PluginUpdateChecker\v5\Vcs\Api::REQUIRE_RELEASE_ASSETS
+	);
 }
 add_action( 'plugins_loaded', 'bluerails_agent_traffic_init_update_checker' );
 
