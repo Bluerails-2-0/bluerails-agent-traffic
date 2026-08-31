@@ -1,0 +1,23 @@
+name: Boot test
+
+# BLUE-1539: runs bin/boot-test.php, which loads the plugin's real
+# 'plugins_loaded' bootstrap chain (including the vendored PUC library) against
+# stub WP functions, so a namespace/class mismatch like the 2026-08-31
+# `v5\Vcs\Api` outage fatals here in CI instead of on every live site's first
+# request post-release.
+on:
+  pull_request:
+    paths:
+      - "**.php"
+
+jobs:
+  boot-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: "7.4"
+
+      - run: php bin/boot-test.php
