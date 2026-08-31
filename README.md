@@ -249,6 +249,11 @@ WordPress Options API.
 
 ## Cutting a release
 
+Before cutting: `php bin/boot-test.php` must exit 0 — it also runs in CI on every PR touching
+`*.php` (`.github/workflows/boot-test.yml`, triggered on any `.php` file at any depth), but
+re-run it locally against whatever's actually in the working tree right before the `rsync`
+below, since that step packages local files, not a pinned git ref.
+
 The live dashboard's plugin-download link (`discovery.bluerails.com` → Settings) points at
 `releases/latest/download/bluerails-agent-traffic.zip` — a stable filename, not tied to a
 version number, so the link never needs a code change. Every release's assets MUST include a
