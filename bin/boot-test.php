@@ -62,14 +62,17 @@ define( 'WP_DEBUG', false );
 define( 'HOUR_IN_SECONDS', 3600 );
 
 // ---------------------------------------------------------------------------
-// Stub WP functions. Every one of these is called somewhere on the
-// 'plugins_loaded' boot path (main plugin file, the three feature-class
-// constructors, or PUC's buildUpdateChecker()/getVcsApi()/enableReleaseAssets()
-// chain) — this list was built by grepping the plugin's own four files and
-// the vendored Puc/v5p7/*.php tree for call sites, then iterating against real
+// Stub WP functions. Built by grepping the plugin's own four files and the
+// vendored Puc/v5p7/*.php tree for call sites, then iterating against real
 // "Call to undefined function/constant" fatals until the whole chain ran
-// clean. Kept flat (no WP behavior beyond "don't fatal, return something
-// plausible") on purpose — this is a boot smoke test, not a WP shim library.
+// clean. Not all 23 are load-bearing on THIS exercised path (`plugins_loaded`
+// only) — a few (`plugins_url`, `do_action`, `wp_remote_post`, `esc_html`,
+// `__`, WP_CONTENT_DIR, HOUR_IN_SECONDS) are only reachable from hook
+// *callback* bodies this test deliberately never invokes (see "WHAT THIS TEST
+// DOES NOT REACH" above) and are kept defensively so they're already in place
+// if this test is later extended to invoke those callbacks. Kept flat (no WP
+// behavior beyond "don't fatal, return something plausible") on purpose —
+// this is a boot smoke test, not a WP shim library.
 // ---------------------------------------------------------------------------
 
 function plugin_dir_path( $file ) {
