@@ -4,7 +4,7 @@ Tags: ai bots, crawler, ai crawler, seo, analytics
 Requires at least: 5.8
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 1.2.0
+Stable tag: 1.3.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -12,11 +12,13 @@ Detects AI-bot crawler traffic (GPTBot, ClaudeBot, PerplexityBot, etc.) and repo
 
 == Description ==
 
-Bluerails Agent Traffic Capture detects AI-bot crawler traffic — GPTBot, ClaudeBot,
-PerplexityBot, Google-Extended, CCBot, Bytespider, Amazonbot, Applebot-Extended,
-meta-externalagent — hitting your WordPress site, and reports each hit to your
-Bluerails Discovery **Agent Traffic** dashboard. It exists as an additional ingestion
-method for site owners who have no server or CDN log access of their own.
+Bluerails Agent Traffic Capture detects AI-bot crawler traffic — including training
+crawlers (GPTBot, ClaudeBot, PerplexityBot, and more) and vendor-confirmed live-fetch
+`*-User` bots (ChatGPT-User, Claude-User, Perplexity-User, and more) — hitting your
+WordPress site, and reports each hit to your Bluerails Discovery **Agent Traffic**
+dashboard. It exists as an additional ingestion method for site owners who have no
+server or CDN log access of their own. See "External services" below for the full
+signature list.
 
 **How it works:**
 
@@ -56,6 +58,15 @@ both the Ingest Endpoint URL and the API key on the plugin's settings screen.** 
 fields are empty by default on activation, and the plugin's send routine checks for a
 non-empty endpoint URL and API key before every request — if either is missing, the
 request is skipped entirely and nothing leaves your site.
+
+The full list of AI-bot User-Agent substrings this plugin matches against (as of
+1.3.0) is: GPTBot, ClaudeBot, PerplexityBot, Google-Extended, CCBot, Bytespider,
+Amazonbot, Applebot-Extended, meta-externalagent, OAI-SearchBot, ChatGPT-User,
+Claude-User, Claude-SearchBot, Perplexity-User, Google-CloudVertexBot,
+Meta-ExternalFetcher, DuckAssistBot, MistralAI-User, Diffbot-User, Diffbot, Kagibot,
+Bravebot, YouBot, YiyanBot, YandexAdditionalBot, Doubaobot, QwenBot, TongyiBot,
+Timpibot, ImagesiftBot, omgilibot, omgili, webzio-extended, webzio, Andibot. The same
+list is also shown on the settings screen for cache-exclusion rules.
 
 Once configured, on every detected AI-bot hit the plugin sends this JSON payload to
 your configured endpoint (`https://discovery.bluerails.com/api/agent-traffic-ingest`
@@ -218,6 +229,17 @@ run Complianz.
 
 == Changelog ==
 
+= 1.3.0 =
+* Adds vendor/Cloudflare-confirmed AI live-fetch `*-User` and `*-SearchBot` signatures
+  (OAI-SearchBot, ChatGPT-User, Claude-User, Claude-SearchBot, Perplexity-User,
+  Google-CloudVertexBot, Meta-ExternalFetcher, DuckAssistBot, MistralAI-User,
+  Diffbot-User, Diffbot, Kagibot) and multi-aggregator-corroborated crawler
+  signatures (Bravebot, YouBot, YiyanBot, YandexAdditionalBot, Doubaobot, QwenBot,
+  TongyiBot, Timpibot, ImagesiftBot, omgilibot, omgili, webzio-extended, webzio,
+  Andibot) to the bot-signature list, closing a gap where live, user-initiated AI
+  agent visits went entirely undetected. See "External services" above for the full
+  list.
+
 = 1.2.0 =
 * Adds an OFF-by-default, opt-in behavioral signal: a small JS beacon that observes
   mouse-movement timing/quantization in visitors' browsers to help identify
@@ -242,6 +264,10 @@ run Complianz.
   guidance.
 
 == Upgrade Notice ==
+
+= 1.3.0 =
+Adds vendor-confirmed AI live-fetch *-User/*-SearchBot signatures and additional
+aggregator-corroborated crawler signatures — see Changelog for the full list.
 
 = 1.2.0 =
 Adds an OFF-by-default, opt-in behavioral signal for rendered-browser AI agents (requires Complianz for visitor consent).
