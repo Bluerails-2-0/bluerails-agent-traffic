@@ -236,6 +236,10 @@ notice both point customers at Connect Logs now, not just at the limitation.
   (PUC) v5.7, unmodified. Initialized in the main plugin file, pointed at this repo's own
   GitHub Releases, so installed sites get WordPress core's native update notice instead of a
   manual zip re-upload. See "Cutting a release" below.
+  (BLUE-1537) `.github/workflows/check-puc-update.yml` runs weekly (and on manual
+  `workflow_dispatch`) to check this vendored copy against PUC's own latest GitHub
+  release and open a PR re-vendoring it on drift — no Composer, so Dependabot cannot
+  see this dependency on its own. No auto-merge; a human reviews the diff.
 
 No database schema — WordPress options only: `bluerails_agent_traffic_endpoint_url`,
 `bluerails_agent_traffic_api_key`, `bluerails_agent_traffic_has_cdn` (the CDN question), and
