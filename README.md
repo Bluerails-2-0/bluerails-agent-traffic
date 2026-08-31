@@ -266,13 +266,28 @@ asset (`enableReleaseAssets('/^bluerails-agent-traffic\.zip$/')` in the main plu
 Once a release is cut per the steps below, every already-installed site picks it up
 automatically via WordPress core's own "Update available" notice — no extra step needed.
 
+Before running the commands below: bump the `Version:` header in
+`bluerails-agent-traffic.php`, update `readme.txt`'s `Stable tag:` and add a
+`== Changelog ==` + `== Upgrade Notice ==` entry (this step was skipped for both
+1.3.1 and 1.3.2 — see BLUE-1540) — and **commit + push that bump to `main` first**.
+`gh release create` with no `--target` tags whatever `main`'s HEAD is at the moment
+you run it; if you run it before pushing, the tag lands on the wrong (older) commit —
+exactly what happened to both `v1.3.1` and `v1.3.2` (BLUE-1540). Always pass
+`--target <sha>` naming the exact commit you just pushed, don't rely on the implicit
+default — and run these commands from the SAME local checkout you just pushed from
+(`git fetch && git checkout main && git pull` first if unsure), since `git rev-parse
+HEAD` in a stale worktree/checkout would silently reproduce the identical bug via a
+different path:
+
 ```bash
+git fetch origin main && git checkout main && git pull   # make sure this checkout is current
 mkdir -p /tmp/plugin-zip/bluerails-agent-traffic
 rsync -a --exclude='.git' --exclude='.gitignore' --exclude='README.md' --exclude='REVIEW-*.md' ./ /tmp/plugin-zip/bluerails-agent-traffic/
 ( cd /tmp/plugin-zip && zip -r bluerails-agent-traffic-X.Y.Z.zip bluerails-agent-traffic )
 cp /tmp/plugin-zip/bluerails-agent-traffic-X.Y.Z.zip bluerails-agent-traffic.zip
 gh release create vX.Y.Z /tmp/plugin-zip/bluerails-agent-traffic-X.Y.Z.zip bluerails-agent-traffic.zip \
-  --repo Bluerails-2-0/bluerails-agent-traffic --title "..." --notes "..."
+  --repo Bluerails-2-0/bluerails-agent-traffic --title "..." --notes "..." \
+  --target "$(git rev-parse HEAD)"
 ```
 
 ## License

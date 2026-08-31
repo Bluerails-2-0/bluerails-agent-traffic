@@ -4,7 +4,7 @@ Tags: ai bots, crawler, ai crawler, seo, analytics
 Requires at least: 5.8
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 1.3.1
+Stable tag: 1.3.2
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -229,6 +229,12 @@ run Complianz.
 
 == Changelog ==
 
+= 1.3.2 =
+* Hotfix: fixes a PHP namespace error in the auto-update checker introduced in 1.3.1
+  (`YahnisElsts\PluginUpdateChecker\v5\Vcs\Api` referenced a class that does not exist
+  in the vendored library; the real namespace is `v5p7\Vcs\Api`) that fataled the
+  plugin on every single request. Sites still on 1.3.1 should update immediately.
+
 = 1.3.1 =
 * Adds an auto-update checker (vendored `YahnisElsts/plugin-update-checker`) pointed at
   this plugin's own GitHub Releases, so installed sites see WordPress core's native
@@ -270,6 +276,12 @@ run Complianz.
   guidance.
 
 == Upgrade Notice ==
+
+= 1.3.2 =
+Hotfix for a fatal error on every request introduced in 1.3.1. Update immediately if you are on 1.3.1.
+
+= 1.3.1 =
+Adds an auto-update checker so future releases show WordPress's native update notice. Note: this version has a known fatal-error bug, fixed in 1.3.2 — update again immediately after installing.
 
 = 1.3.0 =
 Adds vendor-confirmed AI live-fetch *-User/*-SearchBot signatures and additional
