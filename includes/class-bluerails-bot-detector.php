@@ -38,6 +38,44 @@ class Bluerails_Bot_Detector {
 		'Amazonbot'           => 'Amazonbot',
 		'Applebot-Extended'   => 'Applebot-Extended',
 		'meta-externalagent'  => 'meta-externalagent',
+
+		// BLUE-1527 Tier 1 -- vendor/Cloudflare-confirmed *-User (live-fetch) and
+		// *-SearchBot signatures, 2026-08-31. match_bot() below is first-match-wins
+		// in array order, so any pair where one token is a substring of another
+		// MUST be ordered longer/more-specific first -- never rely on append order
+		// alone. 'Diffbot-User' contains 'Diffbot', so it is listed first.
+		'OAI-SearchBot'         => 'OAI-SearchBot',
+		'ChatGPT-User'          => 'ChatGPT-User',
+		'Claude-User'           => 'Claude-User',
+		'Claude-SearchBot'      => 'Claude-SearchBot',
+		'Perplexity-User'       => 'Perplexity-User',
+		'Google-CloudVertexBot' => 'Google-CloudVertexBot',
+		'Meta-ExternalFetcher'  => 'Meta-ExternalFetcher',
+		'DuckAssistBot'         => 'DuckAssistBot',
+		'MistralAI-User'        => 'MistralAI-User',
+		'Diffbot-User'          => 'Diffbot-User', // longer substring -- must precede 'Diffbot'.
+		'Diffbot'               => 'Diffbot',
+		'Kagibot'               => 'Kagibot',
+
+		// BLUE-1527 Tier 2 -- multi-aggregator-corroborated (ai-robots-txt/ai.robots.txt
+		// cross-checked against knownagents.com), not a vendor page -- same evidentiary
+		// bar this file already applied to Bytespider/meta-externalagent above.
+		// 'omgilibot' contains 'omgili' and 'webzio-extended' contains 'webzio', so each
+		// longer token is listed first, same rule as the Tier 1 Diffbot pair.
+		'Bravebot'              => 'Bravebot',            // Brave
+		'YouBot'                => 'YouBot',              // You.com
+		'YiyanBot'              => 'YiyanBot',             // Baidu
+		'YandexAdditionalBot'   => 'YandexAdditionalBot',  // Yandex
+		'Doubaobot'             => 'Doubaobot',            // ByteDance Doubao
+		'QwenBot'               => 'QwenBot',              // Alibaba
+		'TongyiBot'             => 'TongyiBot',            // Alibaba
+		'Timpibot'              => 'Timpibot',             // Timpi
+		'ImagesiftBot'          => 'ImagesiftBot',         // Hive
+		'omgilibot'             => 'omgilibot',            // Webz.io -- longer substring first.
+		'omgili'                => 'omgili',               // Webz.io
+		'webzio-extended'       => 'webzio-extended',      // Webz.io -- longer substring first.
+		'webzio'                => 'webzio',               // Webz.io
+		'Andibot'               => 'Andibot',              // Andi Search
 	);
 
 	/**
