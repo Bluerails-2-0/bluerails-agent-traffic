@@ -232,6 +232,10 @@ notice both point customers at Connect Logs now, not just at the limitation.
   same-origin REST proxy that forwards its feature summary server-side.
 - `assets/js/bluerails-behavioral-beacon.js` — (BLUE-1474) client-side mouse-movement observer,
   gated on Complianz consent.
+- `includes/plugin-update-checker/` — (BLUE-1534) vendored `YahnisElsts/plugin-update-checker`
+  (PUC) v5.7, unmodified. Initialized in the main plugin file, pointed at this repo's own
+  GitHub Releases, so installed sites get WordPress core's native update notice instead of a
+  manual zip re-upload. See "Cutting a release" below.
 
 No database schema — WordPress options only: `bluerails_agent_traffic_endpoint_url`,
 `bluerails_agent_traffic_api_key`, `bluerails_agent_traffic_has_cdn` (the CDN question), and
@@ -245,6 +249,12 @@ The live dashboard's plugin-download link (`discovery.bluerails.com` → Setting
 version number, so the link never needs a code change. Every release's assets MUST include a
 copy of the zip under that exact stable name (in addition to the versioned one), or the
 dashboard link silently breaks the moment this release becomes "latest":
+
+As of 1.3.1 (BLUE-1534), the vendored update checker (`includes/plugin-update-checker/`)
+also reads this repo's GitHub Releases directly, filtered to that same stable-named zip
+asset (`enableReleaseAssets('/^bluerails-agent-traffic\.zip$/')` in the main plugin file).
+Once a release is cut per the steps below, every already-installed site picks it up
+automatically via WordPress core's own "Update available" notice — no extra step needed.
 
 ```bash
 mkdir -p /tmp/plugin-zip/bluerails-agent-traffic

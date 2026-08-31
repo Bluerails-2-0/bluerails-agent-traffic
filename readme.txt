@@ -4,7 +4,7 @@ Tags: ai bots, crawler, ai crawler, seo, analytics
 Requires at least: 5.8
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 1.3.0
+Stable tag: 1.3.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -228,6 +228,12 @@ run Complianz.
 1. Settings screen — configure the ingest endpoint URL, API key, and CDN flag.
 
 == Changelog ==
+
+= 1.3.1 =
+* Adds an auto-update checker (vendored `YahnisElsts/plugin-update-checker`) pointed at
+  this plugin's own GitHub Releases, so installed sites see WordPress core's native
+  "Update available" notice and one-click update instead of needing a manual zip
+  re-upload for every release.
 
 = 1.3.0 =
 * Adds vendor/Cloudflare-confirmed AI live-fetch `*-User` and `*-SearchBot` signatures
