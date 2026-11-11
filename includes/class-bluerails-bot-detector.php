@@ -175,8 +175,8 @@ class Bluerails_Bot_Detector {
 	}
 
 	/**
-	 * Reports a request whose Accept header mentions markdown. The plugin only
-	 * forwards the header; the backend decides whether markdown ranks above HTML.
+	 * Reports a request whose Accept header ranks markdown above HTML. The
+	 * backend ranks the header again and makes the final decision.
 	 */
 	private function maybe_report_markdown_request( $user_agent, $referer ) {
 		$accept = $this->markdown_accept_header();
@@ -186,21 +186,65 @@ class Bluerails_Bot_Detector {
 	}
 
 	/**
-	 * The raw Accept header when it names text/markdown or text/x-markdown and
-	 * fits MAX_ACCEPT_LEN, else null.
+	 * The raw Accept header when it fits MAX_ACCEPT_LEN and ranks markdown
+	 * above text/html, else null.
 	 */
 	private function markdown_accept_header() {
 		if ( empty( $_SERVER['HTTP_ACCEPT'] ) ) {
 			return null;
 		}
 		$accept = sanitize_text_field( wp_unslash( $_SERVER['HTTP_ACCEPT'] ) );
-		if ( strlen( $accept ) > self::MAX_ACCEPT_LEN ) {
-			return null;
-		}
-		if ( false === stripos( $accept, 'text/markdown' ) && false === stripos( $accept, 'text/x-markdown' ) ) {
+		if ( strlen( $accept ) > self::MAX_ACCEPT_LEN || ! self::prefers_markdown( $accept ) ) {
 			return null;
 		}
 		return $accept;
+	}
+
+	/**
+	 * True when text/markdown or text/x-markdown ranks strictly above text/html
+	 * (or HTML is absent). Ranks by q-value, ties broken by header order, q=0
+	 * dropped. Ported from Mintlify's agent-traffic src/classify.ts (MIT License,
+	 * Copyright (c) 2026 Mintlify, Inc.).
+	 */
+	private static function prefers_markdown( $accept ) {
+		$ranked = array();
+		foreach ( explode( ',', $accept ) as $position => $part ) {
+			$params = explode( ';', strtolower( trim( $part ) ) );
+			$type   = trim( array_shift( $params ) );
+			$q      = 1.0;
+			foreach ( $params as $param ) {
+				$param = trim( $param );
+				if ( 0 === strpos( $param, 'q=' ) ) {
+					$value = substr( $param, 2 );
+					// Same as JavaScript's Number(): empty is 0, non-numeric is treated as 1.
+					$q = '' === $value ? 0.0 : ( is_numeric( $value ) ? (float) $value : 1.0 );
+					break;
+				}
+			}
+			if ( $q > 0 ) {
+				$ranked[] = array( 'type' => $type, 'q' => $q, 'position' => $position );
+			}
+		}
+		usort(
+			$ranked,
+			function ( $a, $b ) {
+				if ( $a['q'] !== $b['q'] ) {
+					return $a['q'] < $b['q'] ? 1 : -1;
+				}
+				return $a['position'] - $b['position'];
+			}
+		);
+		$markdown = null;
+		$html     = null;
+		foreach ( $ranked as $index => $entry ) {
+			if ( null === $markdown && in_array( $entry['type'], array( 'text/markdown', 'text/x-markdown' ), true ) ) {
+				$markdown = $index;
+			}
+			if ( null === $html && 'text/html' === $entry['type'] ) {
+				$html = $index;
+			}
+		}
+		return null !== $markdown && ( null === $html || $markdown < $html );
 	}
 
 	/**

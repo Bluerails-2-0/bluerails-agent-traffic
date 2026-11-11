@@ -137,10 +137,11 @@ entry (or vice versa) must follow the same longer-first ordering rule.
 ## Markdown requests
 
 When neither a bot signature nor an AI referrer matched and the request's `Accept` header
-contains `text/markdown` or `text/x-markdown`, the plugin sends the usual payload with
+ranks `text/markdown` or `text/x-markdown` above `text/html` (by q-value, ties by order, q=0
+dropped; `prefers_markdown()`, ported from Mintlify's MIT-licensed `classify.ts`), the plugin sends the usual payload with
 `bot_name` empty, the full User-Agent as `matched_ua_string`, and the raw header as `accept`
-(skipped above 1024 characters, the backend's limit). The plugin does not rank the header;
-the backend records a row only when markdown ranks above `text/html`, and only while its
+(skipped above 1024 characters, the backend's limit). The backend never trusts that ranking: it
+ranks the header again and records a row only when markdown wins, and only while its
 `ACCEPT_HEURISTIC_ENABLED` flag is on. Pages served by a page-cache plugin never run PHP, so
 those markdown hits are invisible here.
 

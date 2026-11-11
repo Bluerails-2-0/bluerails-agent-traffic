@@ -36,11 +36,11 @@ signature list.
    the full raw User-Agent in place of a matched substring — a low-coverage fallback
    signal for browser-extension agentic sessions (e.g. ChatGPT's Chrome extension/Work
    app, Anthropic's Claude for Chrome) whose UA carries no distinguishing token.
-5. If neither matched and the request's `Accept` header names `text/markdown` or
-   `text/x-markdown`, sends the same payload plus that raw header. Tools that fetch a
-   page for an AI often ask for markdown while posing as a browser; browsers never put
-   markdown ahead of HTML. Bluerails decides server-side whether markdown was ranked
-   above HTML and, if so, records the hit as an unidentified agent (low confidence).
+5. If neither matched and the request's `Accept` header ranks `text/markdown` or
+   `text/x-markdown` above `text/html`, sends the same payload plus that raw header.
+   Tools that fetch a page for an AI often ask for markdown while posing as a browser;
+   browsers never put markdown ahead of HTML. Bluerails ranks the header again
+   server-side and records the hit as an unidentified agent (low confidence).
 
 6. Optionally (OFF by default — Settings → Bluerails Agent Traffic → "Behavioral
    signal (beta)"): enable a small JS beacon that runs in visitors' browsers to help
@@ -242,10 +242,10 @@ run Complianz.
 == Changelog ==
 
 = 1.4.0 =
-* Reports requests whose `Accept` header asks for markdown (`text/markdown` or
-  `text/x-markdown`) when no known bot or AI referrer matched, forwarding the raw
-  header. Bluerails ranks it server-side and counts the hit as an unidentified agent
-  only when markdown is preferred over HTML.
+* Reports requests whose `Accept` header prefers markdown (`text/markdown` or
+  `text/x-markdown` ranked above `text/html`) when no known bot or AI referrer
+  matched, forwarding the raw header. Bluerails ranks it again server-side and counts
+  the hit as an unidentified agent.
 * Adds AI assistant and agent signatures: Google-Agent, GoogleOther,
   Google-GeminiNotebook, Amzn-User, Amzn-SearchBot, MistralAI-Index, ExaUser,
   Liner-User, grok-agent, kagi-fetcher, TavilyBot, AzureAI-SearchBot,

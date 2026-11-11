@@ -69,9 +69,26 @@ bluerails_check( '... with the raw Accept header', ( $posts[0]['accept'] ?? null
 bluerails_check( '... with no bot name and the full UA', '' === ( $posts[0]['bot_name'] ?? null ) && CHROME_UA === ( $posts[0]['matched_ua_string'] ?? null ) );
 bluerails_check( '... and no IP field', ! array_key_exists( 'ip', $posts[0] ?? array() ) );
 
-// The plugin forwards; ranking against HTML is the backend's decision.
-$posts = bluerails_test_capture( CHROME_UA, 'text/html, text/x-markdown;q=0.5' );
-bluerails_check( 'text/x-markdown anywhere in Accept is forwarded', 1 === count( $posts ) );
+// Only sent when markdown ranks above HTML; the backend ranks again.
+$ranking_cases = array(
+	'text/markdown, text/html'                                    => 1,
+	'text/x-markdown'                                             => 1,
+	'TEXT/MARKDOWN;q=0.9, text/html;q=0.8'                        => 1,
+	'text/markdown;q=1, text/html'                                => 1,
+	'text/markdown;q=abc, text/html;q=0.9'                        => 1,
+	'text/html;q=0.5, text/markdown'                              => 1,
+	'text/html, text/markdown;q=0.5'                              => 0,
+	'text/html,application/xhtml+xml,*/*;q=0.8, text/markdown;q=0.1' => 0,
+	'text/html, text/markdown'                                    => 0,
+	'text/html;q=0.9, text/markdown;q=0.9'                        => 0,
+	'text/markdown;q=0, text/html'                                => 0,
+	'text/markdown;q=, text/html'                                 => 0,
+	'text/html, text/x-markdown;q=0.5'                            => 0,
+);
+foreach ( $ranking_cases as $accept => $expected_posts ) {
+	$posts = bluerails_test_capture( CHROME_UA, $accept );
+	bluerails_check( sprintf( 'Accept "%s" sends %d hit(s)', $accept, $expected_posts ), $expected_posts === count( $posts ) );
+}
 
 $posts = bluerails_test_capture( CHROME_UA, 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8' );
 bluerails_check( 'ordinary browser Accept sends nothing', 0 === count( $posts ) );
