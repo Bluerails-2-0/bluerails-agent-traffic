@@ -163,6 +163,20 @@ class Bluerails_Bot_Detector {
 			return;
 		}
 
+		// A request signed by its agent (e.g. ChatGPT's agent, which uses a
+		// browser user agent) is reported even though its user agent matches
+		// nothing; the backend counts it only if the signature verifies.
+		$signed = $this->signed_request_fields();
+		if ( null !== $signed ) {
+			// Sent too so the backend can fall back to the markdown path if the signature fails.
+			$accept = $this->markdown_accept_header();
+			if ( null !== $accept ) {
+				$signed['accept'] = $accept;
+			}
+			$this->report_hit( '', $user_agent, $referer, $signed );
+			return;
+		}
+
 		// Only fires when the referer itself is on AI_REFERER_DOMAINS, so an
 		// ordinary human visit never reaches the endpoint; the backend
 		// independently re-verifies this same allow-list server-side.
@@ -181,7 +195,7 @@ class Bluerails_Bot_Detector {
 	private function maybe_report_markdown_request( $user_agent, $referer ) {
 		$accept = $this->markdown_accept_header();
 		if ( null !== $accept ) {
-			$this->report_hit( '', $user_agent, $referer, $accept );
+			$this->report_hit( '', $user_agent, $referer, array( 'accept' => $accept ) );
 		}
 	}
 
@@ -287,12 +301,38 @@ class Bluerails_Bot_Detector {
 	}
 
 	/**
+	 * Returns the Signature, Signature-Input and Signature-Agent headers plus
+	 * the request parts a signature can cover (host, scheme, method, raw URI),
+	 * or null unless all three signature headers are present. Values are
+	 * unslashed but not sanitised: the signature covers them byte for byte.
+	 */
+	private function signed_request_fields() {
+		$keys = array(
+			'signature'       => 'HTTP_SIGNATURE',
+			'signature_input' => 'HTTP_SIGNATURE_INPUT',
+			'signature_agent' => 'HTTP_SIGNATURE_AGENT',
+		);
+		$fields = array();
+		foreach ( $keys as $field => $server_key ) {
+			if ( empty( $_SERVER[ $server_key ] ) ) {
+				return null;
+			}
+			$fields[ $field ] = wp_unslash( $_SERVER[ $server_key ] ); // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+		}
+		$fields['request_host']   = isset( $_SERVER['HTTP_HOST'] ) ? wp_unslash( $_SERVER['HTTP_HOST'] ) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+		$fields['request_scheme'] = is_ssl() ? 'https' : 'http';
+		$fields['request_method'] = isset( $_SERVER['REQUEST_METHOD'] ) ? strtoupper( wp_unslash( $_SERVER['REQUEST_METHOD'] ) ) : 'GET'; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+		$fields['request_uri']    = isset( $_SERVER['REQUEST_URI'] ) ? wp_unslash( $_SERVER['REQUEST_URI'] ) : '/'; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+		return $fields;
+	}
+
+	/**
 	 * Fire-and-forget POST to the configured ingest endpoint. Uses
 	 * blocking => false so this never adds latency to the visitor's
 	 * (bot's) page load, and returns immediately regardless of whether
 	 * the endpoint or API key are configured yet.
 	 */
-	private function report_hit( $bot_name, $matched_ua_string, $referer, $accept = '' ) {
+	private function report_hit( $bot_name, $matched_ua_string, $referer, $extra_fields = array() ) {
 		$endpoint_url = get_option( 'bluerails_agent_traffic_endpoint_url', '' );
 		$api_key      = get_option( 'bluerails_agent_traffic_api_key', '' );
 
@@ -314,9 +354,8 @@ class Bluerails_Bot_Detector {
 			// accepted the row; only a UA-miss uses it to decide identity.
 			'referer'           => $referer,
 		);
-		if ( '' !== $accept ) {
-			$payload['accept'] = $accept;
-		}
+		// Path-specific fields: the markdown Accept header, or the signed-request fields.
+		$payload = array_merge( $payload, $extra_fields );
 
 		wp_remote_post(
 			$endpoint_url,
