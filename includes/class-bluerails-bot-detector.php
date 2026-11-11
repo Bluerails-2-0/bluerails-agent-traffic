@@ -37,7 +37,7 @@ class Bluerails_Bot_Detector {
 		'Bytespider'          => 'Bytespider',
 		'Amazonbot'           => 'Amazonbot',
 		'Applebot-Extended'   => 'Applebot-Extended',
-		'meta-externalagent'  => 'meta-externalagent',
+		'Meta-ExternalAgent'  => 'Meta-ExternalAgent',
 
 		// BLUE-1527 Tier 1 -- vendor/Cloudflare-confirmed *-User (live-fetch) and
 		// *-SearchBot signatures, 2026-08-31. match_bot() below is first-match-wins
@@ -71,12 +71,36 @@ class Bluerails_Bot_Detector {
 		'TongyiBot'             => 'TongyiBot',            // Alibaba
 		'Timpibot'              => 'Timpibot',             // Timpi
 		'ImagesiftBot'          => 'ImagesiftBot',         // Hive
-		'omgilibot'             => 'omgilibot',            // Webz.io -- longer substring first.
+		'Omgilibot'             => 'Omgilibot',            // Webz.io -- longer substring first.
 		'omgili'                => 'omgili',               // Webz.io
 		'webzio-extended'       => 'webzio-extended',      // Webz.io -- longer substring first.
 		'webzio'                => 'webzio',               // Webz.io
 		'Andibot'               => 'Andibot',              // Andi Search
+
+		// AI assistants and agents named on the operator's own crawler page.
+		'Google-Agent'          => 'Google-Agent',
+		'GoogleOther'           => 'GoogleOther',
+		'Google-GeminiNotebook' => 'Google-GeminiNotebook',
+		'Amzn-User'             => 'Amzn-User',
+		'Amzn-SearchBot'        => 'Amzn-SearchBot',
+		'MistralAI-Index'       => 'MistralAI-Index',
+		'ExaUser'               => 'ExaUser',
+		'Liner-User'            => 'Liner-User',
+		// Listed by Mintlify's agent-traffic dataset; no operator page found.
+		'grok-agent'            => 'grok-agent',
+		'kagi-fetcher'          => 'kagi-fetcher',
+		'TavilyBot'             => 'TavilyBot',
+		'AzureAI-SearchBot'     => 'AzureAI-SearchBot',
+		'Gemini-Deep-Research'  => 'Gemini-Deep-Research',
+		// Already in the Bluerails registry. Matching ignores case, so 'AI2Bot' also
+		// catches 'Ai2Bot-Dolma' and reports it as AI2Bot.
+		'cohere-ai'             => 'cohere-ai',
+		'AI2Bot'                => 'AI2Bot',
+		'Kimi-User'             => 'Kimi-User',
 	);
+
+	/** Longest Accept header forwarded; the backend rejects anything longer. */
+	const MAX_ACCEPT_LEN = 1024;
 
 	/**
 	 * BLUE-1473: a small, NAMED allow-list of AI-assistant referrer hostnames —
@@ -144,7 +168,39 @@ class Bluerails_Bot_Detector {
 		// independently re-verifies this same allow-list server-side.
 		if ( null !== $this->match_ai_referer( $referer ) ) {
 			$this->report_hit( '', $user_agent, $referer );
+			return;
 		}
+
+		$this->maybe_report_markdown_request( $user_agent, $referer );
+	}
+
+	/**
+	 * Reports a request whose Accept header mentions markdown. The plugin only
+	 * forwards the header; the backend decides whether markdown ranks above HTML.
+	 */
+	private function maybe_report_markdown_request( $user_agent, $referer ) {
+		$accept = $this->markdown_accept_header();
+		if ( null !== $accept ) {
+			$this->report_hit( '', $user_agent, $referer, $accept );
+		}
+	}
+
+	/**
+	 * The raw Accept header when it names text/markdown or text/x-markdown and
+	 * fits MAX_ACCEPT_LEN, else null.
+	 */
+	private function markdown_accept_header() {
+		if ( empty( $_SERVER['HTTP_ACCEPT'] ) ) {
+			return null;
+		}
+		$accept = sanitize_text_field( wp_unslash( $_SERVER['HTTP_ACCEPT'] ) );
+		if ( strlen( $accept ) > self::MAX_ACCEPT_LEN ) {
+			return null;
+		}
+		if ( false === stripos( $accept, 'text/markdown' ) && false === stripos( $accept, 'text/x-markdown' ) ) {
+			return null;
+		}
+		return $accept;
 	}
 
 	/**
@@ -192,7 +248,7 @@ class Bluerails_Bot_Detector {
 	 * (bot's) page load, and returns immediately regardless of whether
 	 * the endpoint or API key are configured yet.
 	 */
-	private function report_hit( $bot_name, $matched_ua_string, $referer ) {
+	private function report_hit( $bot_name, $matched_ua_string, $referer, $accept = '' ) {
 		$endpoint_url = get_option( 'bluerails_agent_traffic_endpoint_url', '' );
 		$api_key      = get_option( 'bluerails_agent_traffic_api_key', '' );
 
@@ -214,6 +270,9 @@ class Bluerails_Bot_Detector {
 			// accepted the row; only a UA-miss uses it to decide identity.
 			'referer'           => $referer,
 		);
+		if ( '' !== $accept ) {
+			$payload['accept'] = $accept;
+		}
 
 		wp_remote_post(
 			$endpoint_url,

@@ -105,23 +105,44 @@ That's expected and safe: the backend re-verifies every submitted bot name serve
 stale local list can under- or over-match on this plugin's side, but it never corrupts what
 actually lands in your dashboard.
 
+Each `BOT_SIGNATURES` value is the token sent to the backend as `matched_ua_string`, and the
+backend matches it case-sensitively against its registry, so every value must be spelled exactly
+as the registry's `ua_pattern` (`match_bot()` itself ignores case). Doubaobot, QwenBot and
+TongyiBot have no registry row yet, so the backend rejects them.
+
 As of 1.3.0 (BLUE-1527), the list has two tiers, both in `BOT_SIGNATURES`:
 
 * **Original set (training/broad crawlers):** GPTBot, ClaudeBot, PerplexityBot, Google-Extended,
-  CCBot, Bytespider, Amazonbot, Applebot-Extended, meta-externalagent.
+  CCBot, Bytespider, Amazonbot, Applebot-Extended, Meta-ExternalAgent.
 * **Tier 1 (vendor/Cloudflare-confirmed, incl. `*-User` live-fetch bots):** OAI-SearchBot,
   ChatGPT-User, Claude-User, Claude-SearchBot, Perplexity-User, Google-CloudVertexBot,
   Meta-ExternalFetcher, DuckAssistBot, MistralAI-User, Diffbot-User, Diffbot, Kagibot.
 * **Tier 2 (multi-aggregator-corroborated, same evidentiary bar already applied to
   Bytespider/meta-externalagent):** Bravebot, YouBot, YiyanBot, YandexAdditionalBot, Doubaobot,
-  QwenBot, TongyiBot, Timpibot, ImagesiftBot, omgilibot, omgili, webzio-extended, webzio, Andibot.
+  QwenBot, TongyiBot, Timpibot, ImagesiftBot, Omgilibot, omgili, webzio-extended, webzio, Andibot.
+
+1.4.0 adds AI assistants and agents named on the operator's own crawler page (Google-Agent,
+GoogleOther, Google-GeminiNotebook, Amzn-User, Amzn-SearchBot, MistralAI-Index, ExaUser,
+Liner-User), ones listed only in Mintlify's agent-traffic dataset (grok-agent, kagi-fetcher,
+TavilyBot, AzureAI-SearchBot, Gemini-Deep-Research), and registry names the plugin lacked
+(cohere-ai, AI2Bot, Kimi-User).
 
 `match_bot()` is first-match-wins over `BOT_SIGNATURES` in array order. Three pairs in this
 list have one token as a literal substring of another (`Diffbot`/`Diffbot-User`,
-`omgili`/`omgilibot`, `webzio`/`webzio-extended`) — each longer/more-specific token is ordered
+`omgili`/`Omgilibot`, `webzio`/`webzio-extended`) — each longer/more-specific token is ordered
 first in the array, with an inline comment at each pair, so a live-fetch hit is never
 misclassified as the generic crawler. Any future addition that is a substring of an existing
 entry (or vice versa) must follow the same longer-first ordering rule.
+
+## Markdown requests
+
+When neither a bot signature nor an AI referrer matched and the request's `Accept` header
+contains `text/markdown` or `text/x-markdown`, the plugin sends the usual payload with
+`bot_name` empty, the full User-Agent as `matched_ua_string`, and the raw header as `accept`
+(skipped above 1024 characters, the backend's limit). The plugin does not rank the header;
+the backend records a row only when markdown ranks above `text/html`, and only while its
+`ACCEPT_HEURISTIC_ENABLED` flag is on. Pages served by a page-cache plugin never run PHP, so
+those markdown hits are invisible here.
 
 ## Referer allow-list is a local copy too
 
