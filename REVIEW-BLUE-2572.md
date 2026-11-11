@@ -24,11 +24,11 @@ SIBLING-METRIC-COHERENCE: N/A — ingest contract surface; new rows join the exi
 BASELINE-ANCHOR: N/A — no new surface; external reference is Mintlify's classifier (github.com/mintlify/agent-traffic), whose markdown rule this ports.
 
 ## Findings and disposition
-- [MEDIUM] Plugin markdown volume while the flag is off. FIXED (plugin commit 121b29d): plugin posts only when markdown ranks above HTML; 13 ranking cases in `tests/test-markdown-accept.php`, 7 of which failed on the previous code.
-- [LOW] Flag read at module load; flipping it needs a redeploy. Stated in the PR handoff.
-- [LOW] HOT-PATH-COST comment missed the markdown path. FIXED (backend 9309e5737).
-- [LOW] Two long history comments in `identifyRow()`. FIXED, one line each.
-- [LOW] Plugin casing fix for `Meta-ExternalAgent` and `Omgilibot`: correct (registry spellings at `visibility-web/scripts/seed-agent-bot-registry.ts:244`, `:360`; backend match is case-sensitive). Effect: Meta's crawler starts counting from the plugin; Omgilibot rows move from `omgili` to `Omgilibot`. Stated in the PR body.
+- MEDIUM: Plugin markdown volume while the flag is off. FIXED (plugin commit 121b29d): plugin posts only when markdown ranks above HTML; 13 ranking cases in `tests/test-markdown-accept.php`, 7 of which failed on the previous code.
+- LOW: Flag read at module load; flipping it needs a redeploy. Stated in the PR handoff.
+- LOW: HOT-PATH-COST comment missed the markdown path. FIXED (backend 9309e5737).
+- LOW: Two long history comments in `identifyRow()`. FIXED, one line each.
+- LOW: Plugin casing fix for `Meta-ExternalAgent` and `Omgilibot`: correct (registry spellings at `visibility-web/scripts/seed-agent-bot-registry.ts:244`, `:360`; backend match is case-sensitive). Effect: Meta's crawler starts counting from the plugin; Omgilibot rows move from `omgili` to `Omgilibot`. Stated in the PR body.
 
 ## Verification
 - Implementer: backend affected tests (accept-ranking, route, seed, migration journal, ingest) pass against a migrated throwaway Postgres; typecheck, lint, format, knip, semgrep clean. Plugin: `tests/test-bot-signature-ordering.php` 49/0, `tests/test-markdown-accept.php` 0 failures, `bin/boot-test.php` OK.
