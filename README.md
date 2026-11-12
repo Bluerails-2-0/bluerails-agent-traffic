@@ -18,13 +18,19 @@ No build step, no Composer, no npm — plain PHP, installable as-is.
    timestamp, referer) and sends it to your configured ingest endpoint via `wp_remote_post()`
    with `blocking => false` — this never delays or blocks the page response for the visitor
    (or bot) that triggered it.
-4. If the UA matches nothing, checks `$_SERVER['HTTP_REFERER']` against a small allow-list of
+4. If the UA matches nothing but the request carries all three of `Signature`,
+   `Signature-Input` and `Signature-Agent` (agents that sign their requests, such as
+   ChatGPT's agent, which browses with an ordinary Chrome user agent), it is reported with
+   those headers as received plus the requested host, scheme, HTTP method and raw request URI
+   (see "Signed-request fields" below). The backend counts it only if the signature verifies
+   against the signer's published key for this site's own host.
+5. If none of the above matched, checks `$_SERVER['HTTP_REFERER']` against a small allow-list of
    AI-assistant domains (ChatGPT, Perplexity, Claude, Gemini — `AI_REFERER_DOMAINS`) before
    giving up. A match still sends the same payload shape, with an empty `bot_name` and the full
    raw User-Agent as `matched_ua_string` — a low-coverage fallback signal for browser-extension
    agentic sessions (e.g. ChatGPT's Chrome extension/Work app, Anthropic's Claude for Chrome)
    whose UA carries no distinguishing token.
-5. (BLUE-1474, OFF by default) If enabled on the settings screen AND the site runs Complianz
+6. (BLUE-1474, OFF by default) If enabled on the settings screen AND the site runs Complianz
    with visitor "statistics" consent granted, enqueues a small JS beacon
    (`assets/js/bluerails-behavioral-beacon.js`) that observes mouse-movement timing/quantization
    client-side and POSTs a feature summary to this plugin's own REST route
@@ -95,6 +101,30 @@ ingest path can change without a plugin update.
   }
 }
 ```
+
+**Signed-request fields** (only on a UA miss carrying all three signature headers; the
+values are unslashed but not sanitised, because the signature covers them byte for byte):
+
+```json
+{
+  "bot_name": "",
+  "matched_ua_string": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 ...",
+  "page_path": "/rooms/deluxe-suite",
+  "signature": "sig1=:...:",
+  "signature_input": "sig1=(\"@authority\" \"signature-agent\");created=...;keyid=\"...\";tag=\"web-bot-auth\"",
+  "signature_agent": "\"https://chatgpt.com\"",
+  "request_host": "www.example-hotel.com",
+  "request_scheme": "https",
+  "request_method": "GET",
+  "request_uri": "/rooms/deluxe-suite?lang=en"
+}
+```
+
+`accept` is added when the Accept header prefers markdown, so the backend can still count the
+request on the markdown path if the signature does not verify.
+
+Some hosts or proxies strip these headers before PHP sees them; on those sites nothing is
+reported for signed agents. Test: `php tests/test-signed-request-forwarding.php`.
 
 ## Bot list is a local copy, not a live sync
 
