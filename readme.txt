@@ -4,7 +4,7 @@ Tags: ai bots, crawler, ai crawler, seo, analytics
 Requires at least: 5.8
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 1.3.2
+Stable tag: 1.4.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -36,8 +36,13 @@ signature list.
    the full raw User-Agent in place of a matched substring — a low-coverage fallback
    signal for browser-extension agentic sessions (e.g. ChatGPT's Chrome extension/Work
    app, Anthropic's Claude for Chrome) whose UA carries no distinguishing token.
+5. If neither matched and the request's `Accept` header ranks `text/markdown` or
+   `text/x-markdown` above `text/html`, sends the same payload plus that raw header.
+   Tools that fetch a page for an AI often ask for markdown while posing as a browser;
+   browsers never put markdown ahead of HTML. Bluerails ranks the header again
+   server-side and records the hit as an unidentified agent (low confidence).
 
-5. Optionally (OFF by default — Settings → Bluerails Agent Traffic → "Behavioral
+6. Optionally (OFF by default — Settings → Bluerails Agent Traffic → "Behavioral
    signal (beta)"): enable a small JS beacon that runs in visitors' browsers to help
    identify rendered-browser AI agents (browser-extension agentic sessions such as
    ChatGPT's Chrome extension/Work app or Anthropic's Claude for Chrome) that present as an
@@ -60,13 +65,17 @@ non-empty endpoint URL and API key before every request — if either is missing
 request is skipped entirely and nothing leaves your site.
 
 The full list of AI-bot User-Agent substrings this plugin matches against (as of
-1.3.0) is: GPTBot, ClaudeBot, PerplexityBot, Google-Extended, CCBot, Bytespider,
-Amazonbot, Applebot-Extended, meta-externalagent, OAI-SearchBot, ChatGPT-User,
-Claude-User, Claude-SearchBot, Perplexity-User, Google-CloudVertexBot,
-Meta-ExternalFetcher, DuckAssistBot, MistralAI-User, Diffbot-User, Diffbot, Kagibot,
-Bravebot, YouBot, YiyanBot, YandexAdditionalBot, Doubaobot, QwenBot, TongyiBot,
-Timpibot, ImagesiftBot, omgilibot, omgili, webzio-extended, webzio, Andibot. The same
-list is also shown on the settings screen for cache-exclusion rules.
+1.4.0, matched without regard to case) is: GPTBot, ClaudeBot, PerplexityBot,
+Google-Extended, CCBot, Bytespider, Amazonbot, Applebot-Extended, Meta-ExternalAgent,
+OAI-SearchBot, ChatGPT-User, Claude-User, Claude-SearchBot, Perplexity-User,
+Google-CloudVertexBot, Meta-ExternalFetcher, DuckAssistBot, MistralAI-User,
+Diffbot-User, Diffbot, Kagibot, Bravebot, YouBot, YiyanBot, YandexAdditionalBot,
+Doubaobot, QwenBot, TongyiBot, Timpibot, ImagesiftBot, Omgilibot, omgili,
+webzio-extended, webzio, Andibot, Google-Agent, GoogleOther, Google-GeminiNotebook,
+Amzn-User, Amzn-SearchBot, MistralAI-Index, ExaUser, Liner-User, grok-agent,
+kagi-fetcher, TavilyBot, AzureAI-SearchBot, Gemini-Deep-Research, cohere-ai, AI2Bot,
+Kimi-User. The same list is also shown on the settings screen for cache-exclusion
+rules.
 
 Once configured, on every detected AI-bot hit the plugin sends this JSON payload to
 your configured endpoint (`https://discovery.bluerails.com/api/agent-traffic-ingest`
@@ -83,6 +92,7 @@ changes it):
 * `site_url` — this site's home URL
 * `referer` — the raw `Referer` header value (empty string when absent), sent on
   every reported hit, not only the fallback path
+* `accept` — the raw `Accept` header, sent only on a markdown hit (step 5 above)
 
 On a request whose User-Agent matches no known bot signature, the plugin also checks
 the `Referer` header against a small allow-list of AI-assistant domains (ChatGPT,
@@ -150,7 +160,9 @@ alone, to avoid mislabeling ordinary mobile guests.
 * **Full-page cache plugins**: if a page is served from a full-page cache (e.g. WP
   Rocket), WordPress's PHP — and this plugin — never runs for that request. The
   settings screen lists the bot User-Agent substrings so you can add a "never cache
-  these user agents" rule in your cache plugin.
+  these user agents" rule in your cache plugin. Tools that ask for markdown while posing
+  as a browser cannot be excluded that way, so their hits on cached pages are invisible
+  to this plugin.
 * **Bot list drift**: the AI-crawler list shipped in this plugin is a local, static
   copy, not a live sync with Bluerails' canonical bot registry, and will drift over
   time. This is expected: the Bluerails backend re-verifies every submitted bot name
@@ -229,6 +241,20 @@ run Complianz.
 
 == Changelog ==
 
+= 1.4.0 =
+* Reports requests whose `Accept` header prefers markdown (`text/markdown` or
+  `text/x-markdown` ranked above `text/html`) when no known bot or AI referrer
+  matched, forwarding the raw header. Bluerails ranks it again server-side and counts
+  the hit as an unidentified agent.
+* Adds AI assistant and agent signatures: Google-Agent, GoogleOther,
+  Google-GeminiNotebook, Amzn-User, Amzn-SearchBot, MistralAI-Index, ExaUser,
+  Liner-User, grok-agent, kagi-fetcher, TavilyBot, AzureAI-SearchBot,
+  Gemini-Deep-Research, plus cohere-ai, AI2Bot (also catches Ai2Bot-Dolma) and
+  Kimi-User.
+* Fixes Meta-ExternalAgent and Omgilibot hits: the plugin sent these tokens in a
+  casing Bluerails did not recognise, so Meta-ExternalAgent hits were dropped and
+  Omgilibot hits were counted as omgili.
+
 = 1.3.2 =
 * Hotfix: fixes a PHP namespace error in the auto-update checker introduced in 1.3.1
   (`YahnisElsts\PluginUpdateChecker\v5\Vcs\Api` referenced a class that does not exist
@@ -276,6 +302,9 @@ run Complianz.
   guidance.
 
 == Upgrade Notice ==
+
+= 1.4.0 =
+Recognises 16 more AI assistants and crawlers, reports agents that ask for markdown, and fixes dropped Meta-ExternalAgent hits.
 
 = 1.3.2 =
 Hotfix for a fatal error on every request introduced in 1.3.1. Update immediately if you are on 1.3.1.

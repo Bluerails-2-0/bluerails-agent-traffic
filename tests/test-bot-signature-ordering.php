@@ -30,7 +30,7 @@ $cases = array(
 	// each longer/more-specific token must win over its shorter substring sibling.
 	'Diffbot-User/1.0'                 => 'Diffbot-User',
 	'Diffbot/1.0'                      => 'Diffbot',
-	'omgilibot/0.5 +http://omgili.com' => 'omgilibot',
+	'omgilibot/0.5 +http://omgili.com' => 'Omgilibot',
 	'omgili/0.5 +http://omgili.com'    => 'omgili',
 	'webzio-extended/1.0'              => 'webzio-extended',
 	'webzio/1.0'                       => 'webzio',
@@ -59,7 +59,30 @@ $cases = array(
 
 	// Pre-existing tokens must still match after the append (no regression).
 	'GPTBot/1.0'                       => 'GPTBot',
-	'meta-externalagent/1.0'           => 'meta-externalagent',
+	'meta-externalagent/1.0'           => 'Meta-ExternalAgent',
+
+	// AI assistants and agents, using the operator's published UA where one exists.
+	'Mozilla/5.0 (Linux; Android 6.0.1; Nexus 5X Build/MMB29P) AppleWebKit/537.36 (KHTML, like Gecko; compatible; Google-Agent; +https://developers.google.com/crawling/docs/crawlers-fetchers/google-agent) Chrome/131.0.0.0 Mobile Safari/537.36' => 'Google-Agent',
+	'Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; GoogleOther) Chrome/131.0.0.0 Safari/537.36' => 'GoogleOther',
+	'GoogleOther-Image/1.0'            => 'GoogleOther',
+	'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko; compatible; Google-GeminiNotebook; +https://developers.google.com/crawling/docs/crawlers-fetchers/google-gemininotebook) Chrome/137.0.0.0 Safari/537.36' => 'Google-GeminiNotebook',
+	'Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; Amzn-User/0.1) Chrome/131.0.0.0 Safari/537.36' => 'Amzn-User',
+	'Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; Amzn-SearchBot/0.1) Chrome/131.0.0.0 Safari/537.36' => 'Amzn-SearchBot',
+	'Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; Amazonbot/0.1) Chrome/131.0.0.0 Safari/537.36' => 'Amazonbot',
+	'Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; MistralAI-Index/1.0; +https://docs.mistral.ai/robots)' => 'MistralAI-Index',
+	'Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; MistralAI-User/1.0; +https://docs.mistral.ai/robots)' => 'MistralAI-User',
+	'Mozilla/5.0 (compatible; ExaUser/1.0; +https://exauser.crawler.exa.ai)' => 'ExaUser',
+	'Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; Liner-User/1.0; +https://liner-user.liner.com/docs/liner-user)' => 'Liner-User',
+	'grok-agent/1.0'                   => 'grok-agent',
+	'kagi-fetcher/1.0'                 => 'kagi-fetcher',
+	'Kagibot/1.0'                      => 'Kagibot',
+	'TavilyBot/1.0'                    => 'TavilyBot',
+	'AzureAI-SearchBot/1.0'            => 'AzureAI-SearchBot',
+	'Mozilla/5.0 (compatible; Gemini-Deep-Research)' => 'Gemini-Deep-Research',
+	'cohere-ai/1.0'                    => 'cohere-ai',
+	'Mozilla/5.0 (compatible; AI2Bot/1.0)' => 'AI2Bot',
+	'Mozilla/5.0 (compatible; Ai2Bot-Dolma/1.0)' => 'AI2Bot',
+	'Mozilla/5.0 (compatible; Kimi-User/1.0)' => 'Kimi-User',
 
 	// An ordinary browser UA must never match anything.
 	'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36' => null,
@@ -79,6 +102,15 @@ foreach ( $cases as $ua => $expected ) {
 		$expected ?? 'null',
 		$got ?? 'null'
 	);
+}
+
+// The plugin sends the matched token (the value) and the backend matches it
+// case-sensitively, so each value must equal its name, spelled as in the registry.
+foreach ( Bluerails_Bot_Detector::BOT_SIGNATURES as $bot_name => $substring ) {
+	if ( $bot_name !== $substring ) {
+		$failures++;
+		printf( "[FAIL] signature name %s differs from its token %s\n", $bot_name, $substring );
+	}
 }
 
 printf( "\n%d case(s), %d failure(s)\n", count( $cases ), $failures );
