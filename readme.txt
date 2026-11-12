@@ -4,7 +4,7 @@ Tags: ai bots, crawler, ai crawler, seo, analytics
 Requires at least: 5.8
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 1.4.0
+Stable tag: 1.5.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -241,6 +241,13 @@ run Complianz.
 
 == Changelog ==
 
+= 1.5.0 =
+* Reports requests signed by an AI agent (carrying `Signature`, `Signature-Input` and
+  `Signature-Agent`), such as ChatGPT's agent, even when the user agent is an ordinary
+  browser. The three headers are sent as received, with the requested host, scheme,
+  HTTP method and raw request URI, so Bluerails can verify the signature; only verified
+  requests are counted as that agent.
+
 = 1.4.0 =
 * Reports requests whose `Accept` header prefers markdown (`text/markdown` or
   `text/x-markdown` ranked above `text/html`) when no known bot or AI referrer
@@ -302,6 +309,9 @@ run Complianz.
   guidance.
 
 == Upgrade Notice ==
+
+= 1.5.0 =
+Counts AI agents that sign their requests, such as ChatGPT's agent, which browse with an ordinary browser user agent.
 
 = 1.4.0 =
 Recognises 16 more AI assistants and crawlers, reports agents that ask for markdown, and fixes dropped Meta-ExternalAgent hits.
