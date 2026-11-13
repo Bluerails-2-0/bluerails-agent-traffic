@@ -28,9 +28,9 @@ No build step, no Composer, no npm — plain PHP, installable as-is.
    `$_SERVER['HTTP_REFERER']`'s host is on `AI_REFERER_DOMAINS` (ChatGPT, Perplexity, Claude,
    Gemini, Copilot), or the landing URL's `utm_source` is on `AI_UTM_SOURCES` — before
    giving up. A match still sends the same payload shape, with an empty `bot_name` and the full
-   raw User-Agent as `matched_ua_string` — a low-coverage fallback signal for browser-extension
-   agentic sessions (e.g. ChatGPT's Chrome extension/Work app, Anthropic's Claude for Chrome)
-   whose UA carries no distinguishing token.
+   raw User-Agent as `matched_ua_string`. The backend counts it as a person an AI assistant sent
+   to the site, not as an agent visit, and keeps only a daily count (see "Referer allow-list is a local
+   copy too" below).
 6. (BLUE-1474, OFF by default) If enabled on the settings screen AND the site runs Complianz
    with visitor "statistics" consent granted, enqueues a small JS beacon
    (`assets/js/bluerails-behavioral-beacon.js`) that observes mouse-movement timing/quantization
