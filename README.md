@@ -333,11 +333,10 @@ different path:
 
 ```bash
 git fetch origin main && git checkout main && git pull   # make sure this checkout is current
-mkdir -p /tmp/plugin-zip/bluerails-agent-traffic
 rm -rf /tmp/plugin-zip && mkdir -p /tmp/plugin-zip/bluerails-agent-traffic
 # Ship only what WordPress loads: no dev tooling, tests, CI or review notes.
-rsync -a --exclude='.git' --exclude='.gitignore' --exclude='.github' --exclude='bin' \
-  --exclude='tests' --exclude='reviews' --exclude='README.md' --exclude='REVIEW-*.md' \
+rsync -a --exclude='/.git' --exclude='/.gitignore' --exclude='/.github' --exclude='/bin' \
+  --exclude='/tests' --exclude='/reviews' --exclude='README.md' --exclude='/REVIEW-*.md' \
   ./ /tmp/plugin-zip/bluerails-agent-traffic/
 ( cd /tmp/plugin-zip && zip -r bluerails-agent-traffic-X.Y.Z.zip bluerails-agent-traffic \
   && cp bluerails-agent-traffic-X.Y.Z.zip bluerails-agent-traffic.zip )
