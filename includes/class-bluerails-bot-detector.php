@@ -116,6 +116,26 @@ class Bluerails_Bot_Detector {
 		'perplexity.ai',
 		'claude.ai',
 		'gemini.google.com',
+		'copilot.microsoft.com',
+	);
+
+	/**
+	 * `utm_source` values AI assistants put on the links they show, compared
+	 * after trimming and lowercasing. Mirrors the backend's `AI_UTM_SOURCES`
+	 * (visibility-web/app/features/agent-traffic/ai-assistants.ts), which
+	 * checks the value again server-side.
+	 */
+	const AI_UTM_SOURCES = array(
+		'chatgpt.com',
+		'chatgpt',
+		'perplexity.ai',
+		'perplexity',
+		'claude.ai',
+		'claude',
+		'gemini.google.com',
+		'gemini',
+		'copilot.microsoft.com',
+		'copilot',
 	);
 
 	public static function instance() {
@@ -177,10 +197,11 @@ class Bluerails_Bot_Detector {
 			return;
 		}
 
-		// Only fires when the referer itself is on AI_REFERER_DOMAINS, so an
-		// ordinary human visit never reaches the endpoint; the backend
-		// independently re-verifies this same allow-list server-side.
-		if ( null !== $this->match_ai_referer( $referer ) ) {
+		// A visitor who clicked a link in an AI assistant: the referer is on
+		// AI_REFERER_DOMAINS, or the landing URL's utm_source is on
+		// AI_UTM_SOURCES. Any other human visit never reaches the endpoint;
+		// the backend checks both lists again and counts the visit as a person.
+		if ( null !== $this->match_ai_referer( $referer ) || $this->has_ai_utm_source() ) {
 			$this->report_hit( '', $user_agent, $referer );
 			return;
 		}
@@ -298,6 +319,24 @@ class Bluerails_Bot_Detector {
 			}
 		}
 		return null;
+	}
+
+	/**
+	 * True when the requested URL's `utm_source` is on AI_UTM_SOURCES.
+	 */
+	private function has_ai_utm_source() {
+		if ( empty( $_SERVER['REQUEST_URI'] ) ) {
+			return false;
+		}
+		$query = wp_parse_url( wp_unslash( $_SERVER['REQUEST_URI'] ), PHP_URL_QUERY ); // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+		if ( empty( $query ) ) {
+			return false;
+		}
+		parse_str( $query, $params );
+		if ( ! isset( $params['utm_source'] ) || ! is_string( $params['utm_source'] ) ) {
+			return false;
+		}
+		return in_array( strtolower( trim( $params['utm_source'] ) ), self::AI_UTM_SOURCES, true );
 	}
 
 	/**

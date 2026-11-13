@@ -24,8 +24,9 @@ No build step, no Composer, no npm — plain PHP, installable as-is.
    those headers as received plus the requested host, scheme, HTTP method and raw request URI
    (see "Signed-request fields" below). The backend counts it only if the signature verifies
    against the signer's published key for this site's own host.
-5. If none of the above matched, checks `$_SERVER['HTTP_REFERER']` against a small allow-list of
-   AI-assistant domains (ChatGPT, Perplexity, Claude, Gemini — `AI_REFERER_DOMAINS`) before
+5. If none of the above matched, checks whether the visitor clicked through from an AI assistant:
+   `$_SERVER['HTTP_REFERER']`'s host is on `AI_REFERER_DOMAINS` (ChatGPT, Perplexity, Claude,
+   Gemini, Copilot), or the landing URL's `utm_source` is on `AI_UTM_SOURCES` — before
    giving up. A match still sends the same payload shape, with an empty `bot_name` and the full
    raw User-Agent as `matched_ua_string` — a low-coverage fallback signal for browser-extension
    agentic sessions (e.g. ChatGPT's Chrome extension/Work app, Anthropic's Claude for Chrome)
@@ -72,7 +73,7 @@ Example payload body:
 ```
 
 `referer` (added, optional — empty string when absent) is the raw `Referer` header, sent
-whenever a request is reported at all. On a UA-miss + AI-referer-match row, `bot_name` is an
+whenever a request is reported at all. On a UA-miss AI-assistant visitor report, `bot_name` is an
 empty string and `matched_ua_string` carries the full raw User-Agent (there is no matched
 substring to send) — the backend re-derives everything server-side either way; see the next
 section.
@@ -177,11 +178,17 @@ those markdown hits are invisible here.
 
 ## Referer allow-list is a local copy too
 
-`AI_REFERER_DOMAINS` (chatgpt.com, perplexity.ai, claude.ai, gemini.google.com) mirrors the
-backend's own allow-list (`AI_REFERER_ALLOWLIST` in `visibility-web/app/features/agent-traffic/
-ingest.ts`) but is not synced with it — same drift model as the bot-signature list above. The
-backend independently re-classifies the submitted `referer` against its own copy, so a stale
-list here can under- or over-fire the POST but never mislabels what lands in the dashboard.
+`AI_REFERER_DOMAINS` (chatgpt.com, perplexity.ai, claude.ai, gemini.google.com,
+copilot.microsoft.com) and `AI_UTM_SOURCES` (those hosts plus the bare names chatgpt,
+perplexity, claude, gemini, copilot) mirror the backend's own lists (`AI_REFERER_ALLOWLIST` and
+`AI_UTM_SOURCES` in `visibility-web/app/features/agent-traffic/ai-assistants.ts`) but are not
+synced with them — same drift model as the bot-signature list above. The
+backend independently re-classifies the submitted `referer` and the `utm_source` in `page_path`
+against its own copy, so a stale list here can under- or over-fire the POST but never mislabels
+what lands in the dashboard. The backend counts these visitors as people sent by AI assistants
+(a daily count per assistant and page folder), never as agent rows, and stores no User-Agent,
+referrer or page address for them. A known bot UA arriving from an assistant is still reported
+and counted as that bot. Test: `php tests/test-ai-referral.php`.
 Most AI-assistant traffic (browser-extension agentic sessions in particular — CORRECTED
 2026-08-28: ChatGPT Atlas the standalone app was retired 2026-08-09; its successor is a Chrome
 extension + Work desktop app on the same architecture, and Anthropic's Claude for Chrome is a
