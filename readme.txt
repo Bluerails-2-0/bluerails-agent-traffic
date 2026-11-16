@@ -4,7 +4,7 @@ Tags: ai bots, crawler, ai crawler, seo, analytics
 Requires at least: 5.8
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 1.5.0
+Stable tag: 1.6.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -30,12 +30,13 @@ signature list.
    page path/URL, timestamp, site URL, referer) to your configured Bluerails ingest
    endpoint using `wp_remote_post()` with `blocking => false`, so this never delays
    or blocks the page response for the visitor (or bot) that triggered it.
-4. If the User-Agent matches nothing, checks the `Referer` header against a small
-   allow-list of AI-assistant domains (ChatGPT, Perplexity, Claude, Gemini) before
-   giving up. A match still sends the same payload shape, with an empty bot name and
-   the full raw User-Agent in place of a matched substring — a low-coverage fallback
-   signal for browser-extension agentic sessions (e.g. ChatGPT's Chrome extension/Work
-   app, Anthropic's Claude for Chrome) whose UA carries no distinguishing token.
+4. If the User-Agent matches nothing, checks whether the visitor clicked through from
+   an AI assistant (ChatGPT, Perplexity, Claude, Gemini or Copilot): the `Referer`
+   header's host is one of theirs, or the landing URL's `utm_source` names one. A match
+   sends the same payload shape, with an empty bot name and the full raw User-Agent in
+   place of a matched substring. Bluerails counts these as people sent by AI
+   assistants, separately from bots, and keeps only a daily count per assistant and
+   page folder.
 5. If neither matched and the request's `Accept` header ranks `text/markdown` or
    `text/x-markdown` above `text/html`, sends the same payload plus that raw header.
    Tools that fetch a page for an AI often ask for markdown while posing as a browser;
@@ -86,24 +87,30 @@ changes it):
   referer-fallback match (see below)
 * `matched_ua_string` — the User-Agent substring that matched, or the full raw
   User-Agent on a referer-fallback match (there is no matched substring to send)
-* `page_path` — the requested page's path
+* `page_path` — the requested page's path, including its query string as received
+  (Bluerails stores the path without the query)
 * `page_url` — the requested page's full URL
 * `timestamp` — an ISO 8601 UTC timestamp of the hit
 * `site_url` — this site's home URL
 * `referer` — the raw `Referer` header value (empty string when absent), sent on
-  every reported hit, not only the fallback path
+  every reported hit (Bluerails stores only its host)
 * `accept` — the raw `Accept` header, sent only on a markdown hit (step 5 above)
 
-On a request whose User-Agent matches no known bot signature, the plugin also checks
-the `Referer` header against a small allow-list of AI-assistant domains (ChatGPT,
-Perplexity, Claude, Gemini) and, on a match, sends the same payload shape described
-above as a low-coverage fallback signal.
+On a request whose User-Agent matches no known bot signature, the plugin also reports a
+visitor who clicked through from an AI assistant: the `Referer` host is chatgpt.com,
+perplexity.ai, claude.ai, gemini.google.com or copilot.microsoft.com (or a subdomain of
+one), or the landing URL's `utm_source` is one of those hosts or the assistant's name
+(chatgpt, perplexity, claude, gemini, copilot). It sends the same payload shape described
+above. For these visitors Bluerails keeps only a count per day, assistant and page
+folder; it does not store their User-Agent, Referer or page address. Search engines
+such as Google and Bing never match.
 
-No page content and no visitor/bot IP addresses are sent. The `referer` field is
-passed through unmodified from the visitor's browser and, being a URL, may
-incidentally carry identifiers from the referring page or session (for example a
-search query or a chat-thread ID in the query string) — it is not scrubbed or
-redacted before being sent. The request also carries your configured API key as a
+No page content and no visitor/bot IP addresses are sent. The `referer` and
+`page_path`/`page_url` fields are passed through unmodified from the request and, being
+URLs, may incidentally carry identifiers (for example a search query, a chat-thread ID
+or an email address in a query string) — they are not scrubbed before being sent.
+Bluerails reduces the referrer to its host and drops the page address's query before
+storing anything. The request also carries your configured API key as a
 Bearer token in the `Authorization` header, so Bluerails can attribute the hit to
 your account server-side.
 
@@ -198,8 +205,10 @@ pasted both values in from your Bluerails dashboard.
 See "External services" above for the exact payload fields and destination. In short:
 bot name, matched User-Agent substring, page path/URL, timestamp, site URL, and the
 raw `Referer` header — no page content, no visitor IP addresses, but note the
-`referer` field is passed through unmodified and may incidentally carry identifiers
-from the referring page or session.
+`referer` and page fields are passed through unmodified and may incidentally carry
+identifiers in a query string. Bluerails stores the referrer's host only and the page
+path without its query. For a visitor sent by an AI assistant it stores only a daily
+count.
 
 = I use Cloudflare / CloudFront in front of my site — will this still work? =
 
@@ -240,6 +249,14 @@ run Complianz.
 1. Settings screen — configure the ingest endpoint URL, API key, and CDN flag.
 
 == Changelog ==
+
+= 1.6.0 =
+* Reports visitors who clicked through from an AI assistant when the landing URL's
+  `utm_source` names one (for example `utm_source=chatgpt.com`), not only when the
+  `Referer` header does. Bluerails counts them as people sent by AI assistants, apart
+  from bots.
+* Adds Copilot (copilot.microsoft.com) to the AI-assistant referrer list. Bing search
+  does not match.
 
 = 1.5.0 =
 * Reports requests signed by an AI agent (carrying `Signature`, `Signature-Input` and
@@ -309,6 +326,9 @@ run Complianz.
   guidance.
 
 == Upgrade Notice ==
+
+= 1.6.0 =
+Counts visitors sent by ChatGPT, Perplexity, Claude, Gemini and Copilot from the link's utm_source tag as well as the referrer.
 
 = 1.5.0 =
 Counts AI agents that sign their requests, such as ChatGPT's agent, which browse with an ordinary browser user agent.
