@@ -266,13 +266,17 @@ dashboard).
 or `{ "enabled": false }`. A `booking_hosts` entry is a host (subdomains match) or a host plus a
 path prefix. `parse_config()` treats anything malformed as off. The answer is cached in the
 `bluerails_oai_ads_config` transient for an hour and kept in the `bluerails_oai_ads_config_last`
-option. A page view never makes the request: on an expired transient it uses the last good
-config and schedules one `bluerails_oai_ads_refresh_config` single event. 401/403/404 switch
-measurement off; network errors and 5xx keep the last good config and retry after five minutes.
-Saving a new API key or endpoint clears both.
+option, stamped with `fetched_at`; a config without one or older than seven days reads as off. A
+page view never makes the request: on an expired transient it uses the last good config and
+schedules one `bluerails_oai_ads_refresh_config` single event. 401/403/404 switch measurement off;
+network errors and 5xx keep the last good config and retry after five minutes. The request is
+`https` only (http only with `WP_DEBUG`), `redirection => 0`, `limit_response_size => 16384`.
+Saving a new API key or endpoint clears both. Nothing is enqueued in the Customizer or post
+previews. Caveats: WP-cron needs traffic (or a system cron), and page caches keep serving the
+old `bluerailsOaiAds` until purged.
 
 **Browser.** Enqueued in the `<head>` with `window.bluerailsOaiAds = { pixelId, bookingHosts,
-rcbService }`. If `window.oaiq` exists when it runs or before consent arrives, it does nothing
+rcbService, assumeConsent }`. If `window.oaiq` exists when it runs or before consent arrives, it does nothing
 (Favorite's Pixel is installed by its Real Cookie Banner "Codeless" service; do not switch
 measurement on in Bluerails for such a site). The consent tool is chosen at `DOMContentLoaded`,
 because Borlabs Cookie 3's core is an ES module (`borlabs-cookie.min.js`, `type="module"`) that sets
@@ -284,14 +288,22 @@ because Borlabs Cookie 3's core is an ES module (`borlabs-cookie.min.js`, `type=
   `borlabs-cookie-consent-saved`. These names and the `marketing` group id were read from
   schwitzers.com's live Borlabs 3.5.1 bundle (`consents.*.min.js`, `borlabs-cookie-config-de.json.js`)
   on 2026-11-24.
-- Real Cookie Banner (`window.consentApi`): `consentApi.consent(rcbService)` (a promise that
-  resolves on consent) and `consentApi.consentSync(rcbService)` on `RCB/OptOut`, read from
-  favorite-mainz.de's live RCB bundle the same day. RCB has no group-level call, so the hotel's
-  banner needs a service with the unique name `openai-ads-measurement`.
-- Neither: `oaiq("consent", false)` before `init`, OpenAI's documented consent switch.
+  Borlabs dispatches on `document` (heard on `window` too); every signal goes through one
+  `setConsent()`, so repeats change nothing.
+- Real Cookie Banner (`window.consentApi`): `consentApi.consentSync(rcbService)` must return a
+  `cookie` (the service exists) with `consentGiven` and `cookieOptIn`. Re-checked on `consentApi`
+  (window, API ready) and `RCB/OptIn`, `RCB/OptOut`, `RCB/OptIn/All`, `RCB/OptOut/All` (document and
+  window). Read from favorite-mainz.de's live RCB bundle (`dist/997063580.js`): module 4445 is
+  `"RCB/OptIn"`, 2666 is `"RCB/OptOut"`, and RCB's own `consent()` listens for both on `document`.
+  `consent()` itself is not used: for a name no service has, it resolves at once. RCB has no
+  group-level call, so the hotel's banner needs a service with the unique name
+  `openai-ads-measurement`.
+- Neither, after waiting up to 3 s (250 ms polls) for one to appear: nothing loads (fail closed),
+  unless `bluerails_oai_ads_assume_consent` returns exactly `true`.
 
-On consent it runs OpenAI's install snippet verbatim, then `consent`, `init`, and
-`measure page_viewed {type:"contents"}`. Clicks and middle clicks on an `<a>` whose URL matches a
+On first consent it runs OpenAI's install snippet verbatim, then `consent`, `init`, and
+`measure page_viewed {type:"contents"}`; withdrawal sends `oaiq("consent", false)` and consent
+again `oaiq("consent", true)`. While consent stands, clicks and middle clicks on an `<a>` whose URL matches a
 booking target send `measure checkout_started {type:"contents",contents:[]}` (one per second at
 most). A booking widget that opens with `window.open` from a button rather than a link is not
 counted.

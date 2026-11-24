@@ -172,22 +172,40 @@ your account; nothing on this site changes before that, and there is no setting 
 visitor waits), the plugin asks Bluerails for its measurement settings at
 `https://discovery.bluerails.com/api/ads-measurement-config` (same host as your ingest
 endpoint), sending the API key you already configured. The answer is the on/off flag, your
-OpenAI Pixel ID and the booking links to count. It is cached for an hour, so a change in
-Bluerails takes up to an hour (plus any page-cache lifetime) to reach the site. If Bluerails
-cannot be reached, the last answer stays in use.
+OpenAI Pixel ID and the booking links to count. It is cached for an hour. If Bluerails cannot
+be reached, the last answer stays in use for up to seven days; after that measurement switches
+itself off until Bluerails answers again. The request goes only to an `https` address (plain
+`http` only while `WP_DEBUG` is on), follows no redirects and reads at most 16 KB.
+
+**How long a change takes.** Up to an hour for the cached answer, plus two things outside the
+plugin's control:
+
+* **WP-cron** runs only when someone visits the site (unless your host runs it from a real cron
+  job). On a quiet site, or one with `DISABLE_WP_CRON` and no system cron, the refresh waits for
+  the next run.
+* **Page caches** (WP Rocket, host or CDN caching) keep serving pages built with the old
+  answer until they expire or are purged. Purge the page cache after Bluerails switches
+  measurement on or off if the change must apply at once.
+
+Nothing runs in the Customizer preview or on post previews.
 
 **What it loads, and when.** When switched on, a small script in the page `<head>` waits for
 the visitor's consent and only then loads OpenAI's Measurement Pixel
 (`https://bzrcdn.openai.com/sdk/oaiq.min.js`) exactly as OpenAI's install guide gives it:
 
 * **Borlabs Cookie:** consent to the **Marketing** service group
-  (`BorlabsCookie.Consents.hasConsentForServiceGroup('marketing')`). Withdrawing it later in
-  the visit tells the Pixel to stop and delete its cookies.
+  (`BorlabsCookie.Consents.hasConsentForServiceGroup('marketing')`).
 * **Real Cookie Banner:** consent to a service with the unique name
   `openai-ads-measurement` (create it in Real Cookie Banner; the name can be changed with the
-  `bluerails_oai_ads_rcb_service` filter).
-* **Neither:** the Pixel is loaded with OpenAI's own consent switch set to off, so it sends
-  nothing until your consent tool calls `oaiq("consent", true)`.
+  `bluerails_oai_ads_rcb_service` filter). Without such a service nothing loads.
+* **Neither:** nothing is loaded at all. The plugin waits up to 3 seconds after the page has
+  loaded for Borlabs Cookie or Real Cookie Banner to appear, and otherwise does nothing. A site
+  whose consent is handled by something else can declare that with
+  `add_filter( 'bluerails_oai_ads_assume_consent', '__return_true' );`, and is then responsible
+  for having that consent.
+
+Consent withdrawn later in the visit stops the Pixel, deletes its cookies and stops booking
+clicks from being counted; consent given again resumes it.
 
 It then sends `page_viewed` once per page, and `checkout_started` when a visitor clicks a link
 to one of your booking links (a host such as your booking engine's, or a page on your own site
@@ -296,7 +314,7 @@ run Complianz.
 = 1.7.0 =
 * Adds OpenAI Ads measurement ("OpenAI Ads Messung"): once Bluerails switches it on for your
   account, loads OpenAI's Measurement Pixel after visitor consent (Borlabs Cookie marketing
-  group, Real Cookie Banner, or OpenAI's own consent switch) and reports page views and
+  group or Real Cookie Banner; nothing loads without one of them) and reports page views and
   clicks on your booking links (`checkout_started`). Skipped when the site already has a
   Pixel. Off until Bluerails switches it on.
 

@@ -34,7 +34,11 @@ function makeTarget() {
   };
 }
 
-function makeEnv({ readyState = "complete", extra = {} } = {}) {
+function makeEnv({
+  readyState = "complete",
+  extra = {},
+  assumeConsent = false,
+} = {}) {
   const inserted = [];
   const doc = makeTarget();
   doc.readyState = readyState;
@@ -53,19 +57,55 @@ function makeEnv({ readyState = "complete", extra = {} } = {}) {
         "schwitzers.com/hotel-buchen",
       ],
       rcbService: "openai-ads-measurement",
+      assumeConsent,
     },
     URL,
     Date,
     ...extra,
   });
-  const context = { window: win, document: doc, URL, Date, Promise };
-  return { win, doc, inserted, run: () => vm.runInNewContext(source, context) };
+  // Fake interval clock: advance(ms) fires every live interval once per 250 ms step.
+  const intervals = new Map();
+  let nextId = 1;
+  const setInterval = (fn) => {
+    intervals.set(nextId, fn);
+    return nextId++;
+  };
+  const clearInterval = (id) => intervals.delete(id);
+  const advance = (ms) => {
+    for (let t = 250; t <= ms; t += 250)
+      for (const fn of [...intervals.values()]) fn();
+  };
+  const context = {
+    window: win,
+    document: doc,
+    URL,
+    Date,
+    Promise,
+    setInterval,
+    clearInterval,
+  };
+  return {
+    win,
+    doc,
+    inserted,
+    advance,
+    intervals,
+    run: () => vm.runInNewContext(source, context),
+  };
 }
 
 const calls = (win) =>
   win.oaiq && win.oaiq.q ? win.oaiq.q.map((args) => Array.from(args)) : [];
+const last = (win) => JSON.stringify(calls(win).at(-1));
 const link = (href) => ({ tagName: "A", href, parentNode: null });
-const tick = () => new Promise((r) => setTimeout(r, 0));
+const borlabs = (granted) => ({
+  borlabsCookieConfig: {},
+  BorlabsCookie: {
+    Consents: {
+      hasConsentForServiceGroup: (g) => g === "marketing" && granted(),
+    },
+  },
+});
 
 // 1. A Pixel already on the page: do nothing.
 {
@@ -81,16 +121,7 @@ const tick = () => new Promise((r) => setTimeout(r, 0));
 // 2. Borlabs Cookie, marketing group.
 {
   let marketing = false;
-  const env = makeEnv({
-    extra: {
-      borlabsCookieConfig: {},
-      BorlabsCookie: {
-        Consents: {
-          hasConsentForServiceGroup: (g) => g === "marketing" && marketing,
-        },
-      },
-    },
-  });
+  const env = makeEnv({ extra: borlabs(() => marketing) });
   env.run();
   check(
     "Borlabs without consent: nothing loaded",
@@ -119,9 +150,10 @@ const tick = () => new Promise((r) => setTimeout(r, 0));
       ]),
   );
   env.doc.dispatch("borlabs-cookie-consent-saved");
+  env.win.dispatch("borlabs-cookie-consent-saved");
   check(
-    "a second consent event does not load a second SDK",
-    env.inserted.length === 1,
+    "the same consent heard again on document and window: no second SDK, nothing queued",
+    env.inserted.length === 1 && calls(env.win).length === 3,
   );
 
   const before = calls(env.win).length;
@@ -130,10 +162,9 @@ const tick = () => new Promise((r) => setTimeout(r, 0));
       "https://reservation.one.dirs21.de/schwitzers-hotel-am-parkcom/result",
     ),
   });
-  const last = calls(env.win).at(-1);
   check(
     "click to the booking host: checkout_started with empty contents",
-    JSON.stringify(last) ===
+    last(env.win) ===
       JSON.stringify([
         "measure",
         "checkout_started",
@@ -148,7 +179,7 @@ const tick = () => new Promise((r) => setTimeout(r, 0));
     calls(env.win).length === before + 1,
   );
 
-  const env2count = calls(env.win).length;
+  const count = calls(env.win).length;
   env.doc.dispatch("click", {
     target: link("https://www.instagram.com/schwitzers"),
   });
@@ -161,26 +192,42 @@ const tick = () => new Promise((r) => setTimeout(r, 0));
   env.doc.dispatch("click", { target: link("mailto:info@schwitzers.com") });
   check(
     "clicks elsewhere (other host, other path, path lookalike, mailto) send nothing",
-    calls(env.win).length === env2count,
+    calls(env.win).length === count,
   );
 
   marketing = false;
   env.doc.dispatch("borlabs-cookie-consent-saved");
   check(
     "Borlabs withdrawal: consent false",
-    JSON.stringify(calls(env.win).at(-1)) ===
-      JSON.stringify(["consent", false]),
+    last(env.win) === JSON.stringify(["consent", false]),
   );
+  const afterWithdraw = calls(env.win).length;
+  lastClickGap();
+  env.doc.dispatch("click", {
+    target: link("https://reservation.one.dirs21.de/again"),
+  });
+  check(
+    "after withdrawal a booking click sends nothing",
+    calls(env.win).length === afterWithdraw,
+  );
+  marketing = true;
+  env.win.dispatch("borlabs-cookie-consent-saved");
+  check(
+    "consent again, heard on window: consent true, no second SDK",
+    last(env.win) === JSON.stringify(["consent", true]) &&
+      env.inserted.length === 1,
+  );
+}
+
+// The loader sends at most one checkout_started per second; wait that out between scenarios that need it.
+function lastClickGap() {
+  const until = Date.now() + 1100;
+  while (Date.now() < until);
 }
 
 // 3. Booking path on the hotel's own site, nested element inside the link, middle click.
 {
-  const env = makeEnv({
-    extra: {
-      borlabsCookieConfig: {},
-      BorlabsCookie: { Consents: { hasConsentForServiceGroup: () => true } },
-    },
-  });
+  const env = makeEnv({ extra: borlabs(() => true) });
   env.run();
   const anchor = link("https://schwitzers.com/hotel-buchen/");
   env.doc.dispatch("auxclick", {
@@ -214,69 +261,161 @@ const tick = () => new Promise((r) => setTimeout(r, 0));
   );
 }
 
-// 5. Real Cookie Banner.
+// 5. Real Cookie Banner: consentSync must name the service and report it opted in.
 {
-  let resolve;
+  let state = { cookie: null, consentGiven: false, cookieOptIn: true }; // RCB's own pre-load stub answer
   const asked = [];
   const env = makeEnv({
     extra: {
       consentApi: {
-        consent: (name) => {
+        consent: () => Promise.resolve(), // never relied on: it resolves at once for an unknown service
+        consentSync: (name) => {
           asked.push(name);
-          return new Promise((r) => (resolve = r));
+          return state;
         },
-        consentSync: () => ({
-          cookie: null,
-          consentGiven: false,
-          cookieOptIn: true,
-        }),
       },
     },
   });
   env.run();
   check(
-    "RCB: asks for the configured service, loads nothing yet",
+    "RCB before a decision: asks for the configured service, loads nothing",
     asked[0] === "openai-ads-measurement" && env.inserted.length === 0,
   );
-  resolve();
-  await tick();
+  state = { cookie: null, consentGiven: true, cookieOptIn: true }; // decided, but no service has that name
+  env.doc.dispatch("RCB/OptIn/All");
   check(
-    "RCB consent: Pixel loaded with consent true",
+    "RCB with no service of that name: still nothing",
+    env.inserted.length === 0,
+  );
+  const service = { id: 7, uniqueName: "openai-ads-measurement" };
+  state = { cookie: service, consentGiven: true, cookieOptIn: true };
+  env.doc.dispatch("RCB/OptIn", { detail: { service } });
+  check(
+    "RCB opt-in: Pixel loaded with consent true",
     env.inserted.length === 1 &&
       JSON.stringify(calls(env.win)[0]) === JSON.stringify(["consent", true]),
   );
-  env.win.dispatch("RCB/OptOut");
+  state = { cookie: service, consentGiven: true, cookieOptIn: false };
+  env.doc.dispatch("RCB/OptOut", { detail: { service } });
   check(
     "RCB opt-out: consent false",
-    JSON.stringify(calls(env.win).at(-1)) ===
-      JSON.stringify(["consent", false]),
+    last(env.win) === JSON.stringify(["consent", false]),
+  );
+  const n = calls(env.win).length;
+  env.doc.dispatch("click", {
+    target: link("https://reservation.one.dirs21.de/x"),
+  });
+  check(
+    "after opt-out a booking click sends nothing",
+    calls(env.win).length === n,
+  );
+  state = { cookie: service, consentGiven: true, cookieOptIn: true };
+  env.doc.dispatch("RCB/OptIn", { detail: { service } });
+  check(
+    "RCB opt-in again: consent true again, no second SDK",
+    last(env.win) === JSON.stringify(["consent", true]) &&
+      env.inserted.length === 1,
+  );
+  env.doc.dispatch("click", {
+    target: link("https://reservation.one.dirs21.de/x"),
+  });
+  check(
+    "after opting in again a booking click counts",
+    calls(env.win).at(-1)[1] === "checkout_started",
+  );
+}
+{
+  let state = { cookie: null, consentGiven: false, cookieOptIn: true };
+  const env = makeEnv({ extra: { consentApi: { consentSync: () => state } } });
+  env.run();
+  state = { cookie: { id: 1 }, consentGiven: true, cookieOptIn: true };
+  env.win.dispatch("consentApi");
+  check(
+    'RCB API becoming ready (window "consentApi") with consent already stored: Pixel loaded',
+    env.inserted.length === 1,
   );
 }
 
-// 6. No consent tool: OpenAI's own consent API, false before init.
+// 6. No consent tool: fail closed.
 {
   const env = makeEnv();
   env.run();
-  const q = calls(env.win);
+  env.advance(3000);
   check(
-    "no CMP: SDK loaded with consent false before init",
+    "no CMP after the 3 s wait: nothing inserted, no oaiq",
+    env.inserted.length === 0 && env.win.oaiq === undefined,
+  );
+  check("the wait stops after 3 s", env.intervals.size === 0);
+}
+{
+  const env = makeEnv({ assumeConsent: true });
+  env.run();
+  env.advance(2750);
+  check(
+    "assume-consent site: nothing before the wait ends",
+    env.inserted.length === 0,
+  );
+  env.advance(250);
+  check(
+    "assume-consent site: Pixel loaded with consent true after the wait",
     env.inserted.length === 1 &&
-      JSON.stringify(q[0]) === JSON.stringify(["consent", false]) &&
-      q[1][0] === "init",
+      JSON.stringify(calls(env.win)[0]) === JSON.stringify(["consent", true]),
+  );
+}
+{
+  let marketing = false;
+  const env = makeEnv();
+  env.run();
+  env.advance(1000);
+  Object.assign(
+    env.win,
+    borlabs(() => marketing),
+  );
+  env.advance(250);
+  check(
+    "Borlabs appearing 1.25 s late is picked up; nothing loads without consent",
+    env.inserted.length === 0 && env.intervals.size === 0,
+  );
+  marketing = true;
+  env.doc.dispatch("borlabs-cookie-consent-saved");
+  check("late Borlabs consent: Pixel loaded", env.inserted.length === 1);
+}
+{
+  const env = makeEnv();
+  env.run();
+  env.advance(500);
+  env.win.consentApi = {
+    consentSync: () => ({
+      cookie: { id: 1 },
+      consentGiven: true,
+      cookieOptIn: true,
+    }),
+  };
+  env.advance(250);
+  check(
+    "RCB API appearing late with consent already given: Pixel loaded",
+    env.inserted.length === 1,
+  );
+}
+{
+  const env = makeEnv({ assumeConsent: true });
+  env.run();
+  env.advance(3000);
+  Object.assign(
+    env.win,
+    borlabs(() => false),
+  );
+  env.doc.dispatch("borlabs-cookie-consent-saved");
+  check(
+    "a consent tool appearing after the wait is not used; assume-consent already decided",
+    env.inserted.length === 1,
   );
 }
 
 // 7. The site's own banner unblocks a Pixel before ours gets consent: never a second one.
 {
   let marketing = false;
-  const env = makeEnv({
-    extra: {
-      borlabsCookieConfig: {},
-      BorlabsCookie: {
-        Consents: { hasConsentForServiceGroup: () => marketing },
-      },
-    },
-  });
+  const env = makeEnv({ extra: borlabs(() => marketing) });
   env.run();
   const theirs = () => {};
   env.win.oaiq = theirs;
@@ -293,6 +432,7 @@ const tick = () => new Promise((r) => setTimeout(r, 0));
   const env = makeEnv();
   env.win.bluerailsOaiAds = { pixelId: "" };
   env.run();
+  env.advance(3000);
   check(
     "no pixel id: nothing loaded",
     env.inserted.length === 0 && env.win.oaiq === undefined,

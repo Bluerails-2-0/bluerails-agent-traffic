@@ -12,11 +12,14 @@
  * The config is never fetched while a visitor waits. A page view reads the cached copy (transient,
  * one hour; the last good copy is also kept in an option so an expired transient never switches
  * measurement off). When the transient has expired, the page view schedules a single WP-cron run
- * that refreshes it in the background. Changing the endpoint URL or API key clears the cache.
+ * that refreshes it in the background. Changing the endpoint URL or API key clears the cache. A
+ * config fetched more than seven days ago reads as off, so a site Bluerails can no longer reach
+ * stops measuring instead of running on a stale answer forever.
  *
  * The browser half (`assets/js/bluerails-openai-ads-measurement.js`) waits for consent from
- * Borlabs Cookie (marketing group) or Real Cookie Banner, and otherwise loads the Pixel with
- * OpenAI's own consent set to false. See the JS file for the details.
+ * Borlabs Cookie (marketing group) or Real Cookie Banner. With neither, it loads nothing, unless
+ * the site declares with the `bluerails_oai_ads_assume_consent` filter that consent is handled
+ * elsewhere. See the JS file for the details.
  *
  * @package Bluerails_Agent_Traffic
  */
@@ -35,6 +38,8 @@ class Bluerails_OpenAI_Ads_Measurement {
 	const FRESH_TTL       = 3600; // one hour: how long Bluerails waits at most before a switch takes effect
 	const RETRY_TTL       = 300;  // after a failed refresh, try again in five minutes
 	const MAX_TARGETS     = 10;
+	const MAX_AGE         = 604800; // seven days: an older config, e.g. after a week of failed refreshes, reads as off
+	const MAX_BODY_BYTES  = 16384;
 
 	// Real Cookie Banner has no group-level consent call; the hotel's banner needs a service with
 	// this unique name (filterable per site with `bluerails_oai_ads_rcb_service`).
@@ -64,15 +69,19 @@ class Bluerails_OpenAI_Ads_Measurement {
 	/**
 	 * The config URL lives on the same Bluerails host as the configured ingest endpoint, so a site
 	 * pointed at another Bluerails environment reads that environment's config. Null when the
-	 * endpoint is unset or not an http(s) URL.
+	 * endpoint is unset, not https, or http while WP_DEBUG is off.
 	 */
-	public static function config_url( $endpoint_url ) {
+	public static function config_url( $endpoint_url, $allow_http = null ) {
+		if ( null === $allow_http ) {
+			$allow_http = defined( 'WP_DEBUG' ) && WP_DEBUG;
+		}
 		$parts = wp_parse_url( (string) $endpoint_url );
 		if ( ! is_array( $parts ) || empty( $parts['host'] ) || empty( $parts['scheme'] ) ) {
 			return null;
 		}
 		$scheme = strtolower( $parts['scheme'] );
-		if ( 'https' !== $scheme && 'http' !== $scheme ) {
+		// The API key travels with this request, so plain http is refused outside WP_DEBUG.
+		if ( 'https' !== $scheme && ! ( $allow_http && 'http' === $scheme ) ) {
 			return null;
 		}
 		$port = isset( $parts['port'] ) ? ':' . (int) $parts['port'] : '';
@@ -144,9 +153,11 @@ class Bluerails_OpenAI_Ads_Measurement {
 		$response = wp_remote_get(
 			$url,
 			array(
-				'timeout'   => 5,
-				'sslverify' => true,
-				'headers'   => array(
+				'timeout'             => 5,
+				'sslverify'           => true,
+				'redirection'         => 0,
+				'limit_response_size' => self::MAX_BODY_BYTES,
+				'headers'             => array(
 					'Authorization' => 'Bearer ' . $api_key,
 					'Accept'        => 'application/json',
 				),
@@ -168,6 +179,7 @@ class Bluerails_OpenAI_Ads_Measurement {
 	}
 
 	private static function store( $config, $ttl ) {
+		$config['fetched_at'] = time();
 		set_transient( self::TRANSIENT, $config, $ttl );
 		update_option( self::OPT_LAST_CONFIG, $config, false );
 	}
@@ -178,18 +190,25 @@ class Bluerails_OpenAI_Ads_Measurement {
 	 */
 	public function current_config() {
 		$cached = get_transient( self::TRANSIENT );
-		if ( is_array( $cached ) ) {
-			return $cached;
+		if ( ! is_array( $cached ) ) {
+			if ( ! wp_next_scheduled( self::CRON_HOOK ) ) {
+				wp_schedule_single_event( time(), self::CRON_HOOK );
+			}
+			$cached = get_option( self::OPT_LAST_CONFIG, null );
 		}
-		if ( ! wp_next_scheduled( self::CRON_HOOK ) ) {
-			wp_schedule_single_event( time(), self::CRON_HOOK );
+		return self::is_fresh( $cached ) ? $cached : array( 'enabled' => false );
+	}
+
+	/** A config counts only when it says when it was fetched and that was under seven days ago. */
+	public static function is_fresh( $config ) {
+		if ( ! is_array( $config ) || ! isset( $config['fetched_at'] ) || ! is_int( $config['fetched_at'] ) ) {
+			return false;
 		}
-		$last = get_option( self::OPT_LAST_CONFIG, null );
-		return is_array( $last ) ? $last : array( 'enabled' => false );
+		return ( time() - $config['fetched_at'] ) <= self::MAX_AGE;
 	}
 
 	public function maybe_enqueue() {
-		if ( is_admin() || wp_doing_cron() || wp_doing_ajax() ) {
+		if ( is_admin() || wp_doing_cron() || wp_doing_ajax() || is_customize_preview() || is_preview() ) {
 			return;
 		}
 		$endpoint_url = get_option( 'bluerails_agent_traffic_endpoint_url', '' );
@@ -215,9 +234,12 @@ class Bluerails_OpenAI_Ads_Measurement {
 			self::HANDLE,
 			'bluerailsOaiAds',
 			array(
-				'pixelId'      => $config['pixel_id'],
-				'bookingHosts' => isset( $config['booking_hosts'] ) ? array_values( $config['booking_hosts'] ) : array(),
-				'rcbService'   => (string) apply_filters( 'bluerails_oai_ads_rcb_service', self::RCB_SERVICE ),
+				'pixelId'       => $config['pixel_id'],
+				'bookingHosts'  => isset( $config['booking_hosts'] ) ? array_values( $config['booking_hosts'] ) : array(),
+				'rcbService'    => (string) apply_filters( 'bluerails_oai_ads_rcb_service', self::RCB_SERVICE ),
+				// Only for a site whose consent is handled by something this plugin cannot see.
+				// Off by default: with no recognised consent tool, nothing loads.
+				'assumeConsent' => true === apply_filters( 'bluerails_oai_ads_assume_consent', false ),
 			)
 		);
 	}

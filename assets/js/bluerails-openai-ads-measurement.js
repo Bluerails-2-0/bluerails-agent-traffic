@@ -2,23 +2,28 @@
  * BLUE-2725 — OpenAI Ads Measurement Pixel, loaded for the hotel by Bluerails.
  *
  * Config comes from `window.bluerailsOaiAds` (printed by class-bluerails-openai-ads-measurement.php):
- * `pixelId`, `bookingHosts` (a host, or a host with a path prefix) and `rcbService`.
+ * `pixelId`, `bookingHosts` (a host, or a host with a path prefix), `rcbService` and `assumeConsent`.
  *
  * What it does, in order:
  * 1. If `window.oaiq` already exists, the site already runs a Pixel (installed by hand or by its
  *    consent banner), so this file does nothing at all, now or later.
- * 2. It waits for consent, and loads nothing from OpenAI before it:
+ * 2. It finds the site's consent tool, waiting up to 3 seconds after the page has loaded for one to
+ *    appear, and loads nothing from OpenAI before that tool reports consent:
  *    - Borlabs Cookie: `BorlabsCookie.Consents.hasConsentForServiceGroup('marketing')`, checked when
- *      Borlabs has started (`borlabs-cookie-after-init`, `borlabs-cookie-handle-unblock`) and again
- *      on `borlabs-cookie-consent-saved`. A later withdrawal calls `oaiq("consent", false)`.
- *    - Real Cookie Banner: `consentApi.consent(rcbService)`, a promise that resolves once the visitor
- *      accepts the banner service with that unique name. Withdrawal is checked on RCB's
- *      `RCB/OptOut` event with `consentApi.consentSync`.
- *    - Neither: the Pixel loads with OpenAI's own consent set to false before `init`, so it sends
- *      nothing until the site's own consent tool calls `oaiq("consent", true)`.
- * 3. On consent it runs OpenAI's install snippet unchanged (it has its own `if (w.oaiq) return;`),
+ *      Borlabs starts (`borlabs-cookie-after-init`, `borlabs-cookie-handle-unblock`) and on every
+ *      `borlabs-cookie-consent-saved`. Borlabs 3.5.1 dispatches these on `document`; they are also
+ *      heard on `window`.
+ *    - Real Cookie Banner: `consentApi.consentSync(rcbService)` must name the service and report it
+ *      opted in. Checked when RCB's API is ready (`consentApi` on `window`) and on every `RCB/OptIn`,
+ *      `RCB/OptOut`, `RCB/OptIn/All` and `RCB/OptOut/All` (RCB listens for these on `document`).
+ *      `consentApi.consent()` is not used: it resolves at once when no service has that name.
+ *    - Neither: nothing loads (fail closed), unless the site set the `bluerails_oai_ads_assume_consent`
+ *      filter, declaring that consent is handled elsewhere.
+ *    Withdrawn consent calls `oaiq("consent", false)`, which stops events and deletes the Pixel's
+ *    cookies; consent given again calls `oaiq("consent", true)`.
+ * 3. On first consent it runs OpenAI's install snippet unchanged (it has its own `if (w.oaiq) return;`),
  *    initialises the Pixel and sends `page_viewed`.
- * 4. A click on a link to a booking target sends `checkout_started` with
+ * 4. While consent stands, a click on a link to a booking target sends `checkout_started` with
  *    `{ type: "contents", contents: [] }`, once per click.
  *
  * Reference: OpenAI Ads docs, "Measurement Pixel" (install, consent, send events) and "Supported
@@ -32,8 +37,24 @@
   if (w.oaiq) return;
 
   var SDK_URL = "https://bzrcdn.openai.com/sdk/oaiq.min.js";
+  var WAIT_FOR_CMP_MS = 3000;
+  var POLL_MS = 250;
+  var BORLABS_EVENTS = [
+    "borlabs-cookie-after-init",
+    "borlabs-cookie-handle-unblock",
+    "borlabs-cookie-consent-saved",
+  ];
+  var RCB_EVENTS = [
+    "RCB/OptIn",
+    "RCB/OptOut",
+    "RCB/OptIn/All",
+    "RCB/OptOut/All",
+  ];
+
   var targets = parseTargets(config.bookingHosts);
   var started = false;
+  var consented = false;
+  var cmp = null;
   var lastCheckoutAt = 0;
 
   function parseTargets(list) {
@@ -71,6 +92,7 @@
   }
 
   function onClick(event) {
+    if (!consented) return;
     if (event.type === "auxclick" && event.button !== 1) return;
     var node = event.target;
     while (node && node !== d && !(node.tagName === "A" && node.href))
@@ -99,75 +121,103 @@
     })(w, d, "script", SDK_URL);
   }
 
-  function start(consentGranted) {
-    if (started) {
-      if (consentGranted) w.oaiq("consent", true);
+  // Every consent signal lands here, so a repeated or duplicated event changes nothing.
+  function setConsent(granted) {
+    if (granted === consented) return;
+    if (granted && !started) {
+      // A Pixel the site's own banner unblocked in the meantime wins; never load a second one.
+      if (w.oaiq) return;
+      consented = true;
+      started = true;
+      installPixel();
+      w.oaiq("consent", true);
+      w.oaiq("init", { pixelId: config.pixelId });
+      w.oaiq("measure", "page_viewed", { type: "contents" });
+      if (targets.length) {
+        d.addEventListener("click", onClick, true);
+        d.addEventListener("auxclick", onClick, true);
+      }
       return;
     }
-    // A Pixel the site's own banner unblocked in the meantime wins; never load a second one.
-    if (w.oaiq) return;
-    started = true;
-    installPixel();
-    w.oaiq("consent", consentGranted);
-    w.oaiq("init", { pixelId: config.pixelId });
-    w.oaiq("measure", "page_viewed", { type: "contents" });
-    if (targets.length) {
-      d.addEventListener("click", onClick, true);
-      d.addEventListener("auxclick", onClick, true);
+    consented = granted;
+    if (started) w.oaiq("consent", granted);
+  }
+
+  function listen(names, fn) {
+    for (var i = 0; i < names.length; i++) {
+      d.addEventListener(names[i], fn);
+      w.addEventListener(names[i], fn);
     }
   }
 
-  function withdraw() {
-    if (started) w.oaiq("consent", false);
+  function checkBorlabs() {
+    var api = w.BorlabsCookie && w.BorlabsCookie.Consents;
+    if (!api || typeof api.hasConsentForServiceGroup !== "function") return;
+    var granted = false;
+    try {
+      granted = api.hasConsentForServiceGroup("marketing") === true;
+    } catch (e) {
+      granted = false;
+    }
+    setConsent(granted);
   }
 
-  function useBorlabs() {
-    var check = function () {
-      var api = w.BorlabsCookie && w.BorlabsCookie.Consents;
-      if (!api || typeof api.hasConsentForServiceGroup !== "function") return;
-      var granted = false;
-      try {
-        granted = api.hasConsentForServiceGroup("marketing") === true;
-      } catch (e) {
-        granted = false;
-      }
-      if (granted) start(true);
-      else withdraw();
-    };
-    d.addEventListener("borlabs-cookie-after-init", check);
-    d.addEventListener("borlabs-cookie-handle-unblock", check);
-    d.addEventListener("borlabs-cookie-consent-saved", check);
-    check();
-  }
-
-  function useRealCookieBanner() {
+  function checkRealCookieBanner() {
     var api = w.consentApi;
     var service = String(config.rcbService || "");
-    if (!service) return;
-    api.consent(service).then(
-      function () {
-        start(true);
-      },
-      function () {},
+    if (!api || typeof api.consentSync !== "function" || !service) return;
+    var state = null;
+    try {
+      state = api.consentSync(service);
+    } catch (e) {
+      state = null;
+    }
+    setConsent(
+      !!(state && state.cookie && state.consentGiven && state.cookieOptIn),
     );
-    var recheck = function () {
-      try {
-        var state = w.consentApi.consentSync(service);
-        if (!state || !state.consentGiven || !state.cookieOptIn) withdraw();
-      } catch (e) {
-        withdraw();
-      }
-    };
-    d.addEventListener("RCB/OptOut", recheck);
-    w.addEventListener("RCB/OptOut", recheck);
+  }
+
+  function hasBorlabs() {
+    return !!(w.BorlabsCookie || w.borlabsCookieConfig);
+  }
+
+  function hasRealCookieBanner() {
+    return !!(w.consentApi && typeof w.consentApi.consentSync === "function");
+  }
+
+  // Returns true once a consent tool is found and wired.
+  function tryChoose() {
+    if (cmp) return true;
+    if (hasBorlabs()) {
+      cmp = "borlabs";
+      listen(BORLABS_EVENTS, checkBorlabs);
+      checkBorlabs();
+      return true;
+    }
+    if (hasRealCookieBanner()) {
+      cmp = "rcb";
+      listen(RCB_EVENTS, checkRealCookieBanner);
+      w.addEventListener("consentApi", checkRealCookieBanner);
+      checkRealCookieBanner();
+      return true;
+    }
+    return false;
   }
 
   function chooseConsent() {
-    if (w.oaiq && !started) return;
-    if (w.BorlabsCookie || w.borlabsCookieConfig) useBorlabs();
-    else if (w.consentApi && typeof w.consentApi.consent === "function")
-      useRealCookieBanner();
-    else start(false);
+    if (tryChoose()) return;
+    // A consent tool may load after this script: give it up to WAIT_FOR_CMP_MS to appear.
+    var waited = 0;
+    var timer = setInterval(function () {
+      waited += POLL_MS;
+      if (tryChoose()) {
+        clearInterval(timer);
+      } else if (waited >= WAIT_FOR_CMP_MS) {
+        clearInterval(timer);
+        cmp = "none";
+        if (config.assumeConsent === true) setConsent(true);
+      }
+    }, POLL_MS);
   }
 
   // Borlabs Cookie's core is an ES module and runs after the HTML is parsed, so the consent tool

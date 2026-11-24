@@ -23,8 +23,12 @@ $GLOBALS['enqueued']   = array();
 $GLOBALS['localized']  = array();
 
 function add_action() {}
-function apply_filters( $hook, $value ) { return $value; }
+$GLOBALS['filters'] = array();
+$GLOBALS['preview'] = false;
+function apply_filters( $hook, $value ) { return array_key_exists( $hook, $GLOBALS['filters'] ) ? $GLOBALS['filters'][ $hook ] : $value; }
 function is_admin() { return false; }
+function is_customize_preview() { return 'customize' === $GLOBALS['preview']; }
+function is_preview() { return 'post' === $GLOBALS['preview']; }
 function wp_doing_cron() { return false; }
 function wp_doing_ajax() { return false; }
 function wp_parse_url( $url, $component = -1 ) { return parse_url( $url, $component ); }
@@ -70,6 +74,12 @@ function reset_state( $opts = null ) {
 	$GLOBALS['response']   = null;
 	$GLOBALS['enqueued']   = array();
 	$GLOBALS['localized']  = array();
+	$GLOBALS['filters']    = array();
+	$GLOBALS['preview']    = false;
+}
+
+function fresh( $body, $age = 0 ) {
+	return Bluerails_OpenAI_Ads_Measurement::parse_config( $body ) + array( 'fetched_at' => time() - $age );
 }
 
 function module() {
@@ -85,7 +95,9 @@ $on_body = array(
 
 // --- config URL -------------------------------------------------------------------------------
 check( 'config URL sits on the ingest endpoint host', 'https://discovery.bluerails.com/api/ads-measurement-config' === Bluerails_OpenAI_Ads_Measurement::config_url( 'https://discovery.bluerails.com/api/agent-traffic-ingest' ) );
-check( 'config URL keeps a non-default port', 'http://localhost:5173/api/ads-measurement-config' === Bluerails_OpenAI_Ads_Measurement::config_url( 'http://localhost:5173/api/agent-traffic-ingest' ) );
+check( 'config URL keeps a non-default port', 'https://discovery.example:8443/api/ads-measurement-config' === Bluerails_OpenAI_Ads_Measurement::config_url( 'https://discovery.example:8443/api/agent-traffic-ingest' ) );
+check( 'plain http is refused when WP_DEBUG is off (the API key would travel in clear)', null === Bluerails_OpenAI_Ads_Measurement::config_url( 'http://discovery.example/api/agent-traffic-ingest' ) );
+check( 'plain http is allowed only with WP_DEBUG on', 'http://localhost:5173/api/ads-measurement-config' === Bluerails_OpenAI_Ads_Measurement::config_url( 'http://localhost:5173/api/agent-traffic-ingest', true ) );
 check( 'no config URL for an empty endpoint', null === Bluerails_OpenAI_Ads_Measurement::config_url( '' ) );
 check( 'no config URL for a non-http endpoint', null === Bluerails_OpenAI_Ads_Measurement::config_url( 'ftp://x.example/a' ) );
 
@@ -117,6 +129,8 @@ $GLOBALS['response'] = array( 'code' => 200, 'body' => json_encode( $on_body ) )
 module()->refresh_config();
 $req = $GLOBALS['requests'][0];
 check( 'refresh calls the config endpoint with the bearer key', 'https://discovery.bluerails.com/api/ads-measurement-config' === $req['url'] && 'Bearer bak_test' === $req['args']['headers']['Authorization'] );
+check( 'refresh follows no redirect and reads at most 16 KB', 0 === $req['args']['redirection'] && 16384 === $req['args']['limit_response_size'] );
+check( 'a 200 stores when it was fetched', abs( time() - $GLOBALS['transients']['bluerails_oai_ads_config']['value']['fetched_at'] ) < 5 );
 check( 'a 200 is cached for an hour', 3600 === $GLOBALS['transients']['bluerails_oai_ads_config']['ttl'] && true === $GLOBALS['transients']['bluerails_oai_ads_config']['value']['enabled'] );
 check( 'a 200 is kept as the last good config', true === $GLOBALS['opts']['bluerails_oai_ads_config_last']['enabled'] );
 
@@ -132,6 +146,10 @@ $GLOBALS['response'] = array( 'code' => 401, 'body' => '{"error":"invalid_api_ke
 module()->refresh_config();
 check( 'a 401 switches measurement off', false === $GLOBALS['transients']['bluerails_oai_ads_config']['value']['enabled'] && false === $GLOBALS['opts']['bluerails_oai_ads_config_last']['enabled'] );
 
+reset_state( array( 'bluerails_agent_traffic_endpoint_url' => 'http://discovery.bluerails.com/api/agent-traffic-ingest', 'bluerails_agent_traffic_api_key' => 'bak_test' ) );
+module()->refresh_config();
+check( 'an http endpoint: no request, the key is never sent, measurement off', 0 === count( $GLOBALS['requests'] ) && false === $GLOBALS['transients']['bluerails_oai_ads_config']['value']['enabled'] );
+
 reset_state( array( 'bluerails_agent_traffic_endpoint_url' => 'https://discovery.bluerails.com/api/agent-traffic-ingest' ) );
 module()->refresh_config();
 check( 'no API key: no request, measurement off', 0 === count( $GLOBALS['requests'] ) && false === $GLOBALS['transients']['bluerails_oai_ads_config']['value']['enabled'] );
@@ -144,23 +162,64 @@ module()->maybe_enqueue();
 check( 'a second page view does not schedule a second refresh', 1 === count( $GLOBALS['scheduled'] ) );
 
 reset_state();
-set_transient( 'bluerails_oai_ads_config', Bluerails_OpenAI_Ads_Measurement::parse_config( $on_body ), 3600 );
+set_transient( 'bluerails_oai_ads_config', fresh( $on_body ), 3600 );
 module()->maybe_enqueue();
 check( 'enabled: loader enqueued in the head', isset( $GLOBALS['enqueued']['bluerails-openai-ads-measurement'] ) && false === $GLOBALS['enqueued']['bluerails-openai-ads-measurement']['in_footer'] );
 check(
 	'enabled: config handed to the browser',
 	array(
-		'pixelId'      => 'WJiUXtEVpLN3BqnY3LKTx2',
-		'bookingHosts' => array( 'reservation.one.dirs21.de', 'schwitzers.com/hotel-buchen' ),
-		'rcbService'   => 'openai-ads-measurement',
+		'pixelId'       => 'WJiUXtEVpLN3BqnY3LKTx2',
+		'bookingHosts'  => array( 'reservation.one.dirs21.de', 'schwitzers.com/hotel-buchen' ),
+		'rcbService'    => 'openai-ads-measurement',
+		'assumeConsent' => false,
 	) === $GLOBALS['localized']['bluerailsOaiAds']
 );
 check( 'enabled: no request on the page view', 0 === count( $GLOBALS['requests'] ) );
 
 reset_state();
-$GLOBALS['opts']['bluerails_oai_ads_config_last'] = Bluerails_OpenAI_Ads_Measurement::parse_config( $on_body );
+$GLOBALS['opts']['bluerails_oai_ads_config_last'] = fresh( $on_body );
 module()->maybe_enqueue();
 check( 'expired cache: last good config still loads the Pixel, refresh scheduled', isset( $GLOBALS['enqueued']['bluerails-openai-ads-measurement'] ) && 1 === count( $GLOBALS['scheduled'] ) );
+
+reset_state();
+set_transient( 'bluerails_oai_ads_config', fresh( $on_body, 7 * 86400 + 60 ), 3600 );
+module()->maybe_enqueue();
+check( 'a config fetched more than seven days ago is off', array() === $GLOBALS['enqueued'] );
+
+reset_state();
+set_transient( 'bluerails_oai_ads_config', fresh( $on_body, 6 * 86400 ), 3600 );
+module()->maybe_enqueue();
+check( 'a config fetched six days ago still loads', isset( $GLOBALS['enqueued']['bluerails-openai-ads-measurement'] ) );
+
+reset_state();
+set_transient( 'bluerails_oai_ads_config', Bluerails_OpenAI_Ads_Measurement::parse_config( $on_body ), 3600 );
+module()->maybe_enqueue();
+check( 'a config without fetched_at (pre-fix cache) is off', array() === $GLOBALS['enqueued'] );
+
+reset_state();
+$GLOBALS['opts']['bluerails_oai_ads_config_last'] = fresh( $on_body, 8 * 86400 );
+module()->maybe_enqueue();
+check( 'expired cache with a stale last good config: off, refresh still scheduled', array() === $GLOBALS['enqueued'] && 1 === count( $GLOBALS['scheduled'] ) );
+
+foreach ( array( 'customize', 'post' ) as $mode ) {
+	reset_state();
+	set_transient( 'bluerails_oai_ads_config', fresh( $on_body ), 3600 );
+	$GLOBALS['preview'] = $mode;
+	module()->maybe_enqueue();
+	check( "skipped in a $mode preview", array() === $GLOBALS['enqueued'] );
+}
+
+reset_state();
+set_transient( 'bluerails_oai_ads_config', fresh( $on_body ), 3600 );
+$GLOBALS['filters']['bluerails_oai_ads_assume_consent'] = true;
+module()->maybe_enqueue();
+check( 'bluerails_oai_ads_assume_consent filter on: assumeConsent true', true === $GLOBALS['localized']['bluerailsOaiAds']['assumeConsent'] );
+
+reset_state();
+set_transient( 'bluerails_oai_ads_config', fresh( $on_body ), 3600 );
+$GLOBALS['filters']['bluerails_oai_ads_assume_consent'] = '1';
+module()->maybe_enqueue();
+check( 'assume-consent filter must be exactly true', false === $GLOBALS['localized']['bluerailsOaiAds']['assumeConsent'] );
 
 reset_state();
 set_transient( 'bluerails_oai_ads_config', array( 'enabled' => false ), 3600 );
@@ -168,7 +227,7 @@ module()->maybe_enqueue();
 check( 'disabled: nothing enqueued', array() === $GLOBALS['enqueued'] );
 
 reset_state( array() );
-set_transient( 'bluerails_oai_ads_config', Bluerails_OpenAI_Ads_Measurement::parse_config( $on_body ), 3600 );
+set_transient( 'bluerails_oai_ads_config', fresh( $on_body ), 3600 );
 module()->maybe_enqueue();
 check( 'plugin not configured: nothing enqueued even with a cached config', array() === $GLOBALS['enqueued'] );
 
