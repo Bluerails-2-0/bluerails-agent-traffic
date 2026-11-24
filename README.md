@@ -37,6 +37,10 @@ No build step, no Composer, no npm — plain PHP, installable as-is.
    client-side and POSTs a feature summary to this plugin's own REST route
    (`includes/class-bluerails-behavioral-beacon.php`), which forwards it server-side to the same
    ingest endpoint. See "Behavioral signal beacon" below for the full design.
+7. (BLUE-2725, off until Bluerails switches it on) Loads OpenAI's Measurement Pixel for the
+   hotel's ChatGPT ad campaigns after visitor consent, sending `page_viewed` and, on clicks to
+   the hotel's booking links, `checkout_started`. Config comes from Bluerails, not from a
+   setting here. See "OpenAI Ads measurement" below.
 
 ## Setup
 
@@ -247,6 +251,55 @@ bot/human label. All scoring happens server-side, under the SAME discipline as t
 bot-UA path (the plugin's own claims are never trusted for the label that lands in your
 dashboard).
 
+## OpenAI Ads measurement (BLUE-2725)
+
+`includes/class-bluerails-openai-ads-measurement.php` + `assets/js/bluerails-openai-ads-measurement.js`.
+
+**Config contract.** WP-cron calls `GET <ingest endpoint origin>/api/ads-measurement-config` with
+`Authorization: Bearer <api_key>` (the same key and host as ingest; visibility-web
+`app/routes/api.ads-measurement-config.ts`). Response:
+
+```json
+{ "enabled": true, "pixel_id": "WJiUXtEVpLN3BqnY3LKTx2", "booking_hosts": ["reservation.one.dirs21.de", "schwitzers.com/hotel-buchen"] }
+```
+
+or `{ "enabled": false }`. A `booking_hosts` entry is a host (subdomains match) or a host plus a
+path prefix. `parse_config()` treats anything malformed as off. The answer is cached in the
+`bluerails_oai_ads_config` transient for an hour and kept in the `bluerails_oai_ads_config_last`
+option. A page view never makes the request: on an expired transient it uses the last good
+config and schedules one `bluerails_oai_ads_refresh_config` single event. 401/403/404 switch
+measurement off; network errors and 5xx keep the last good config and retry after five minutes.
+Saving a new API key or endpoint clears both.
+
+**Browser.** Enqueued in the `<head>` with `window.bluerailsOaiAds = { pixelId, bookingHosts,
+rcbService }`. If `window.oaiq` exists when it runs or before consent arrives, it does nothing
+(Favorite's Pixel is installed by its Real Cookie Banner "Codeless" service; do not switch
+measurement on in Bluerails for such a site). The consent tool is chosen at `DOMContentLoaded`,
+because Borlabs Cookie 3's core is an ES module (`borlabs-cookie.min.js`, `type="module"`) that sets
+`window.BorlabsCookie` after parsing:
+
+- Borlabs Cookie (`window.BorlabsCookie` or `window.borlabsCookieConfig`):
+  `BorlabsCookie.Consents.hasConsentForServiceGroup('marketing')`, re-checked on the document
+  events `borlabs-cookie-after-init`, `borlabs-cookie-handle-unblock` and
+  `borlabs-cookie-consent-saved`. These names and the `marketing` group id were read from
+  schwitzers.com's live Borlabs 3.5.1 bundle (`consents.*.min.js`, `borlabs-cookie-config-de.json.js`)
+  on 2026-11-24.
+- Real Cookie Banner (`window.consentApi`): `consentApi.consent(rcbService)` (a promise that
+  resolves on consent) and `consentApi.consentSync(rcbService)` on `RCB/OptOut`, read from
+  favorite-mainz.de's live RCB bundle the same day. RCB has no group-level call, so the hotel's
+  banner needs a service with the unique name `openai-ads-measurement`.
+- Neither: `oaiq("consent", false)` before `init`, OpenAI's documented consent switch.
+
+On consent it runs OpenAI's install snippet verbatim, then `consent`, `init`, and
+`measure page_viewed {type:"contents"}`. Clicks and middle clicks on an `<a>` whose URL matches a
+booking target send `measure checkout_started {type:"contents",contents:[]}` (one per second at
+most). A booking widget that opens with `window.open` from a button rather than a link is not
+counted.
+
+Tests: `php tests/test-openai-ads-measurement.php` and `node tests/test-openai-ads-measurement-js.mjs`.
+Live check against a real Borlabs banner (schwitzers.com, OpenAI requests aborted, fake Pixel ID):
+`node bin/live-consent-check.cjs <dir containing node_modules/playwright> assets/js/bluerails-openai-ads-measurement.js`.
+
 ## Why `wp_loaded`, not `template_redirect`
 
 WordPress's own hook reference recommends the earlier hooks (`init`/`wp_loaded`) for
@@ -291,6 +344,10 @@ notice both point customers at Connect Logs now, not just at the limitation.
   same-origin REST proxy that forwards its feature summary server-side.
 - `assets/js/bluerails-behavioral-beacon.js` — (BLUE-1474) client-side mouse-movement observer,
   gated on Complianz consent.
+- `includes/class-bluerails-openai-ads-measurement.php` — (BLUE-2725) fetches and caches the
+  OpenAI Ads measurement config from Bluerails and enqueues the Pixel loader.
+- `assets/js/bluerails-openai-ads-measurement.js` — (BLUE-2725) consent-gated OpenAI Pixel
+  loader and booking-click `checkout_started`.
 - `includes/plugin-update-checker/` — (BLUE-1534) vendored `YahnisElsts/plugin-update-checker`
   (PUC) v5.7, unmodified. Initialized in the main plugin file, pointed at this repo's own
   GitHub Releases, so installed sites get WordPress core's native update notice instead of a
@@ -304,7 +361,8 @@ notice both point customers at Connect Logs now, not just at the limitation.
 No database schema — WordPress options only: `bluerails_agent_traffic_endpoint_url`,
 `bluerails_agent_traffic_api_key`, `bluerails_agent_traffic_has_cdn` (the CDN question), and
 `bluerails_agent_traffic_behavioral_enabled` (BLUE-1474, OFF by default), all via the standard
-WordPress Options API.
+WordPress Options API, plus BLUE-2725's cached config (`bluerails_oai_ads_config` transient,
+`bluerails_oai_ads_config_last` option).
 
 ## Cutting a release
 

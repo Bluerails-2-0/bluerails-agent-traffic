@@ -4,7 +4,7 @@ Tags: ai bots, crawler, ai crawler, seo, analytics
 Requires at least: 5.8
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 1.6.0
+Stable tag: 1.7.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -51,9 +51,15 @@ signature list.
    after this site's own **Complianz** consent plugin reports visitor "statistics"
    consent — see "Behavioral signal beacon (opt-in, BLUE-1474)" below.
 
+7. When Bluerails switches on ChatGPT ad measurement for your account ("OpenAI Ads
+   Messung"), loads OpenAI's Measurement Pixel after the visitor's consent and reports
+   page views and clicks on your booking links to your ChatGPT ad campaigns. See "OpenAI
+   Ads measurement" below.
+
 No database table and no custom schema are used — the plugin stores its settings as
 entries in the standard WordPress Options API (ingest endpoint URL, API key, a CDN
-yes/no flag, and the behavioral-signal opt-in flag).
+yes/no flag, and the behavioral-signal opt-in flag), plus the cached OpenAI Ads
+measurement settings (a transient and an option).
 
 = External services =
 
@@ -157,6 +163,43 @@ Agent Traffic dashboard, kept separate from AI-bot and referrer-based rows. Sess
 with no fine pointer (mobile/touch visitors) are never scored on pointer-absence
 alone, to avoid mislabeling ordinary mobile guests.
 
+= OpenAI Ads measurement (BLUE-2725) =
+
+For hotels whose ChatGPT ads Bluerails manages. **Off until Bluerails switches it on** for
+your account; nothing on this site changes before that, and there is no setting to tick.
+
+**How it is switched on.** About once an hour, in the background (WP-cron, never while a
+visitor waits), the plugin asks Bluerails for its measurement settings at
+`https://discovery.bluerails.com/api/ads-measurement-config` (same host as your ingest
+endpoint), sending the API key you already configured. The answer is the on/off flag, your
+OpenAI Pixel ID and the booking links to count. It is cached for an hour, so a change in
+Bluerails takes up to an hour (plus any page-cache lifetime) to reach the site. If Bluerails
+cannot be reached, the last answer stays in use.
+
+**What it loads, and when.** When switched on, a small script in the page `<head>` waits for
+the visitor's consent and only then loads OpenAI's Measurement Pixel
+(`https://bzrcdn.openai.com/sdk/oaiq.min.js`) exactly as OpenAI's install guide gives it:
+
+* **Borlabs Cookie:** consent to the **Marketing** service group
+  (`BorlabsCookie.Consents.hasConsentForServiceGroup('marketing')`). Withdrawing it later in
+  the visit tells the Pixel to stop and delete its cookies.
+* **Real Cookie Banner:** consent to a service with the unique name
+  `openai-ads-measurement` (create it in Real Cookie Banner; the name can be changed with the
+  `bluerails_oai_ads_rcb_service` filter).
+* **Neither:** the Pixel is loaded with OpenAI's own consent switch set to off, so it sends
+  nothing until your consent tool calls `oaiq("consent", true)`.
+
+It then sends `page_viewed` once per page, and `checkout_started` when a visitor clicks a link
+to one of your booking links (a host such as your booking engine's, or a page on your own site
+such as `/hotel-buchen`).
+
+If the site already runs an OpenAI Pixel (`window.oaiq` exists), the plugin loads nothing, so
+the Pixel is never installed twice. The Pixel sets two first-party cookies, `__oppref` (30 days)
+and `__obref` (365 days), and sends events to `https://bzr.openai.com`. If your site enforces a
+Content Security Policy, allow `https://bzrcdn.openai.com` in `script-src` and
+`https://bzr.openai.com https://bzrcdn.openai.com` in `connect-src` (and `https://bzr.openai.com`
+in `img-src`).
+
 = Known limitations =
 
 * **CDN edge caching**: if a CDN (Cloudflare, CloudFront, etc.) serves a cached page
@@ -250,6 +293,13 @@ run Complianz.
 
 == Changelog ==
 
+= 1.7.0 =
+* Adds OpenAI Ads measurement ("OpenAI Ads Messung"): once Bluerails switches it on for your
+  account, loads OpenAI's Measurement Pixel after visitor consent (Borlabs Cookie marketing
+  group, Real Cookie Banner, or OpenAI's own consent switch) and reports page views and
+  clicks on your booking links (`checkout_started`). Skipped when the site already has a
+  Pixel. Off until Bluerails switches it on.
+
 = 1.6.0 =
 * Reports visitors who clicked through from an AI assistant when the landing URL's
   `utm_source` names one (for example `utm_source=chatgpt.com`), not only when the
@@ -326,6 +376,9 @@ run Complianz.
   guidance.
 
 == Upgrade Notice ==
+
+= 1.7.0 =
+Lets Bluerails switch on ChatGPT ad measurement (OpenAI Measurement Pixel, after visitor consent) for your site.
 
 = 1.6.0 =
 Counts visitors sent by ChatGPT, Perplexity, Claude, Gemini and Copilot from the link's utm_source tag as well as the referrer.
