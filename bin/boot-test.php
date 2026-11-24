@@ -3,7 +3,7 @@
  * BLUE-1539 — CI boot smoke test.
  *
  * Loads the plugin's real bootstrap chain (bluerails-agent-traffic.php's two
- * 'plugins_loaded' callbacks, the three feature classes' constructors, and the
+ * 'plugins_loaded' callbacks, the four feature classes' constructors, and the
  * vendored Plugin Update Checker's buildUpdateChecker()+getVcsApi()+
  * enableReleaseAssets() call) OUTSIDE WordPress, against a minimal set of stub
  * WP functions/constants. A missing/renamed class or a wrong PUC namespace
@@ -13,11 +13,12 @@
  * before a release ships it.
  *
  * WHAT THIS TEST DOES REACH (verified by reading the code, not assumed):
- *   - bluerails-agent-traffic.php: the `require_once` chain for all three
+ *   - bluerails-agent-traffic.php: the `require_once` chain for all four
  *     includes/class-bluerails-*.php files plus the PUC library loader
  *     (load-v5p7.php, its Autoloader registration, both PucFactory files).
  *   - bluerails_agent_traffic_init(): Bluerails_Settings::instance(),
- *     Bluerails_Bot_Detector::instance(), Bluerails_Behavioral_Beacon::instance()
+ *     Bluerails_Bot_Detector::instance(), Bluerails_Behavioral_Beacon::instance(),
+ *     Bluerails_OpenAI_Ads_Measurement::instance()
  *     — each class's __construct(), which only calls add_action() (registering
  *     callbacks, not invoking them).
  *   - bluerails_agent_traffic_init_update_checker(): PucFactory::buildUpdateChecker()
