@@ -51,24 +51,40 @@ class Bluerails_Agent_Door {
 		if ( null === $document ) {
 			return;
 		}
-		$listing_id = self::listing_id();
-		if ( null === $listing_id ) {
-			return; // Not set up on this site: WordPress answers as it did before.
+		$response = self::serve( self::listing_id(), $document, self::request_host(), Bluerails_Bot_Detector::request_method() );
+		if ( null === $response ) {
+			return; // Not set up on this site, or not GET/HEAD: WordPress answers as it did before.
 		}
+		self::emit( $response );
+		exit;
+	}
 
-		$response = self::response_for( $listing_id, $document, self::request_host() );
+	/**
+	 * The full answer to a door request, array( 'status', 'headers', 'body' ), or
+	 * null when this site has no listing ID or the method is neither GET nor HEAD.
+	 */
+	public static function serve( $listing_id, $document, $host, $method ) {
+		if ( null === $listing_id || ! in_array( $method, array( 'GET', 'HEAD' ), true ) ) {
+			return null;
+		}
+		$response = self::response_for( $listing_id, $document, $host );
+		return array(
+			'status'  => $response['status'],
+			'headers' => self::headers_for( $response ),
+			'body'    => 'HEAD' === $method ? '' : $response['body'],
+		);
+	}
+
+	/** Sends a serve() answer. */
+	public static function emit( $response ) {
 		if ( ! defined( 'DONOTCACHEPAGE' ) ) {
-			define( 'DONOTCACHEPAGE', true ); // Page-cache plugins: every fetch must reach PHP to be counted.
+			define( 'DONOTCACHEPAGE', true ); // Page-cache plugins: see headers_for().
 		}
 		status_header( $response['status'] );
-		foreach ( self::headers_for( $response ) as $name => $value ) {
+		foreach ( $response['headers'] as $name => $value ) {
 			header( $name . ': ' . $value );
 		}
-		$method = isset( $_SERVER['REQUEST_METHOD'] ) ? strtoupper( sanitize_text_field( wp_unslash( $_SERVER['REQUEST_METHOD'] ) ) ) : 'GET';
-		if ( 'HEAD' !== $method ) {
-			echo $response['body']; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- the upstream JSON, byte for byte.
-		}
-		exit;
+		echo $response['body']; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- the upstream JSON, byte for byte.
 	}
 
 	/** The listing ID from the option, or null when unset or not a UUID. */
@@ -155,7 +171,7 @@ class Bluerails_Agent_Door {
 			return array( 'status' => 503 );
 		}
 		if ( $domain !== $host ) {
-			self::log( sprintf( '%s names %s but this site answers as %s, so it is answered with 404. Fix the listing\'s agent_door_host or the listing ID.', $url, $domain, $host ) );
+			self::log( sprintf( '%s names %s but this request came to %s (site address %s), so it is answered with 404. Fix the listing\'s agent_door_host or the listing ID.', $url, $domain, $host, (string) wp_parse_url( home_url(), PHP_URL_HOST ) ) );
 		}
 		return array(
 			'status' => 200,

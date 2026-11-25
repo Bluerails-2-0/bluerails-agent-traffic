@@ -44,9 +44,15 @@ function wp_remote_get( $url, $args ) {
 function wp_remote_retrieve_response_code( $r ) { return $r['code']; }
 function wp_remote_retrieve_body( $r ) { return $r['body']; }
 function wp_remote_post( $url, $args ) { $GLOBALS['posts'][] = json_decode( $args['body'], true ); }
+$GLOBALS['status_sent']     = null;
+$GLOBALS['settings_errors'] = array();
+function status_header( $code ) { $GLOBALS['status_sent'] = $code; }
+function add_settings_error( $setting, $code, $message ) { $GLOBALS['settings_errors'][] = $code; }
+function __( $text ) { return $text; }
 
 require __DIR__ . '/../includes/class-bluerails-bot-detector.php';
 require __DIR__ . '/../includes/class-bluerails-agent-door.php';
+require __DIR__ . '/../includes/class-bluerails-settings.php';
 
 $log_file = tempnam( sys_get_temp_dir(), 'door-log' );
 ini_set( 'error_log', $log_file );
@@ -151,7 +157,7 @@ reset_state();
 $GLOBALS['response'] = array( 'code' => 200, 'body' => $live_body );
 $out = Bluerails_Agent_Door::response_for( LISTING, 'poppy.json', 'www.oberwirt-wangen.de' );
 check( 'domain mismatch -> 404', 404 === $out['status'] && '{"error":"not_found"}' === $out['body'] );
-check( 'domain mismatch is logged with both hosts', false !== strpos( logged(), 'names schwitzers.com but this site answers as www.oberwirt-wangen.de' ) );
+check( 'domain mismatch is logged with both hosts', false !== strpos( logged(), 'names schwitzers.com but this request came to www.oberwirt-wangen.de (site address schwitzers.com)' ) );
 reset_state();
 $GLOBALS['response'] = array( 'code' => 200, 'body' => $live_body );
 check( 'www. is a different host: www.schwitzers.com -> 404', 404 === Bluerails_Agent_Door::response_for( LISTING, 'poppy.json', 'www.schwitzers.com' )['status'] );
@@ -175,11 +181,46 @@ reset_state();
 $GLOBALS['response'] = array( 'code' => 301, 'body' => '' );
 check( 'an upstream redirect is not followed (503)', 503 === Bluerails_Agent_Door::response_for( LISTING, 'poppy.json', 'schwitzers.com' )['status'] );
 
-// --- every fetch is reported, whatever the user agent -----------------------------------------
-function capture( array $server, array $get = array() ) {
+// --- serve() and emit(): what the site sends ----------------------------------------------------
+reset_state();
+check( 'serve: no listing ID set -> nothing served, no fetch', null === Bluerails_Agent_Door::serve( null, 'poppy.json', 'schwitzers.com', 'GET' ) && 0 === count( $GLOBALS['requests'] ) );
+check( 'serve: POST and OPTIONS are left to WordPress', null === Bluerails_Agent_Door::serve( LISTING, 'poppy.json', 'schwitzers.com', 'POST' ) && null === Bluerails_Agent_Door::serve( LISTING, 'poppy.json', 'schwitzers.com', 'OPTIONS' ) );
+$GLOBALS['response'] = array( 'code' => 200, 'body' => $live_body );
+$get = Bluerails_Agent_Door::serve( LISTING, 'poppy.json', 'schwitzers.com', 'GET' );
+check( 'serve GET: 200, the upstream body, JSON headers', 200 === $get['status'] && $live_body === $get['body'] && 'application/json' === $get['headers']['Content-Type'] );
+$head = Bluerails_Agent_Door::serve( LISTING, 'poppy.json', 'schwitzers.com', 'HEAD' );
+check( 'serve HEAD: 200 and the same headers, but no body', 200 === $head['status'] && '' === $head['body'] && $get['headers'] === $head['headers'] );
+reset_state();
+$GLOBALS['response'] = new WP_Error();
+check( 'serve: 503 carries Retry-After', '60' === Bluerails_Agent_Door::serve( LISTING, 'poppy.json', 'schwitzers.com', 'GET' )['headers']['Retry-After'] );
+check( 'DONOTCACHEPAGE is not defined before anything is sent', ! defined( 'DONOTCACHEPAGE' ) );
+// The CLI already printed the results above, so header() warns "headers already sent"; keep that out of the body.
+ini_set( 'display_errors', '0' );
+ob_start();
+Bluerails_Agent_Door::emit( $get );
+$sent = ob_get_clean();
+check( 'emit: defines DONOTCACHEPAGE so page caches skip the answer', defined( 'DONOTCACHEPAGE' ) && true === DONOTCACHEPAGE );
+check( 'emit: sends the status and exactly the body', 200 === $GLOBALS['status_sent'] && $live_body === $sent );
+ob_start();
+Bluerails_Agent_Door::emit( $head );
+check( 'emit HEAD: no body sent', '' === ob_get_clean() );
+ini_set( 'display_errors', '1' );
+
+// --- settings: an invalid listing ID keeps the stored one -------------------------------------
+$settings = ( new ReflectionClass( 'Bluerails_Settings' ) )->newInstanceWithoutConstructor();
+$GLOBALS['opts'] = array( 'bluerails_agent_door_listing_id' => LISTING );
+$GLOBALS['settings_errors'] = array();
+check( 'settings: a typo keeps the working listing ID and shows an error', LISTING === $settings->sanitize_door_listing_id( '766cb53a-6677-4963-afdb-b2c72d180c1' ) && array( 'invalid_listing_id' ) === $GLOBALS['settings_errors'] );
+$GLOBALS['settings_errors'] = array();
+check( 'settings: a valid ID is saved lowercased, no error', '00000000-0000-4000-8000-00000000abcd' === $settings->sanitize_door_listing_id( '00000000-0000-4000-8000-00000000ABCD' ) && array() === $GLOBALS['settings_errors'] );
+check( 'settings: an empty field switches the door off', '' === $settings->sanitize_door_listing_id( '  ' ) && array() === $GLOBALS['settings_errors'] );
+
+// --- every GET is reported, whatever the user agent -------------------------------------------
+function capture( array $server, array $get = array(), $listing_id = LISTING ) {
 	$GLOBALS['opts']  = array(
 		'bluerails_agent_traffic_endpoint_url' => 'https://discovery.bluerails.com/api/agent-traffic-ingest',
 		'bluerails_agent_traffic_api_key'      => 'bak_test',
+		'bluerails_agent_door_listing_id'      => $listing_id,
 	);
 	$GLOBALS['posts'] = array();
 	$_SERVER          = array_map( 'addslashes', $server );
@@ -218,6 +259,17 @@ check( 'a signed fetch is reported once, signature fields and door_document both
 
 $posts = capture( array( 'HTTP_USER_AGENT' => CHROME, 'REQUEST_URI' => '/index.php?bluerails_agent_door=poppy.json' ), array( 'bluerails_agent_door' => 'poppy.json' ) );
 check( 'through a server rewrite: reported under the door path, not /index.php', 1 === count( $posts ) && '/.well-known/poppy.json' === $posts[0]['page_path'] );
+
+$posts = capture( array( 'HTTP_USER_AGENT' => CHROME, 'REQUEST_URI' => '/.well-known/poppy.json' ), array(), '' );
+check( 'no listing ID: a fetch of poppy.json sends no ingest POST', 0 === count( $posts ) );
+$posts = capture( array( 'HTTP_USER_AGENT' => CHROME, 'REQUEST_URI' => '/?bluerails_agent_door=poppy.json' ), array( 'bluerails_agent_door' => 'poppy.json' ), '' );
+check( 'no listing ID: the query argument sends no ingest POST either', 0 === count( $posts ) );
+foreach ( array( 'HEAD', 'POST', 'OPTIONS' ) as $method ) {
+	$posts = capture( array( 'HTTP_USER_AGENT' => CHROME, 'REQUEST_URI' => '/.well-known/poppy.json', 'REQUEST_METHOD' => $method ) );
+	check( "$method of poppy.json is not counted as a door fetch", 0 === count( $posts ) );
+}
+$posts = capture( array( 'HTTP_USER_AGENT' => CHROME, 'REQUEST_URI' => '/.well-known/poppy.json', 'REQUEST_METHOD' => 'GET' ) );
+check( 'an explicit GET is counted', 1 === count( $posts ) );
 
 $posts = capture( array( 'HTTP_USER_AGENT' => CHROME, 'REQUEST_URI' => '/zimmer/' ) );
 check( 'an ordinary Chrome page view is still not reported', 0 === count( $posts ) );

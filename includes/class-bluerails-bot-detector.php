@@ -178,9 +178,10 @@ class Bluerails_Bot_Detector {
 			return;
 		}
 
-		// Every fetch of the agent door is reported whatever the user agent: Muse,
-		// for one, presents as desktop Chrome.
-		$this->door_document = self::requested_door_document();
+		// Every GET of the agent door is reported whatever the user agent (Muse, for
+		// one, presents as desktop Chrome), but only on a site that serves the door.
+		$door = self::requested_door_document();
+		$this->door_document = null !== $door && 'GET' === self::request_method() && null !== Bluerails_Agent_Door::listing_id() ? $door : null;
 
 		if ( empty( $_SERVER['HTTP_USER_AGENT'] ) && null === $this->door_document ) {
 			return;
@@ -226,6 +227,11 @@ class Bluerails_Bot_Detector {
 		if ( null !== $this->door_document ) {
 			$this->report_hit( '', $user_agent, $referer );
 		}
+	}
+
+	/** The request's HTTP method, uppercased; GET when unknown. */
+	public static function request_method() {
+		return isset( $_SERVER['REQUEST_METHOD'] ) ? strtoupper( sanitize_text_field( wp_unslash( $_SERVER['REQUEST_METHOD'] ) ) ) : 'GET';
 	}
 
 	/**

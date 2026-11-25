@@ -58,7 +58,7 @@ signature list.
 
 8. With a listing ID from Bluerails, serves your hotel's agent door:
    `/.well-known/poppy.json` and `/.well-known/poppy-0.4.json`, which tell AI agents
-   where to get this hotel's live prices and booking, and reports every fetch of them.
+   where to get this hotel's live prices and booking, and reports every GET of them.
    See "Agent door" below.
 
 No database table and no custom schema are used — the plugin stores its settings as
@@ -107,9 +107,10 @@ changes it):
 * `referer` — the raw `Referer` header value (empty string when absent), sent on
   every reported hit (Bluerails stores only its host)
 * `accept` — the raw `Accept` header, sent only on a markdown hit (step 5 above)
-* `door_document` — `poppy.json` or `poppy-0.4.json`, sent only on a fetch of the agent
-  door (step 8 above). Every such fetch is reported whatever its User-Agent, with the
-  full raw User-Agent (or `-` when there is none)
+* `door_document` — `poppy.json` or `poppy-0.4.json`, sent only on a GET of the agent
+  door (step 8 above) while a listing ID is set. Every such GET is reported whatever its
+  User-Agent, with the full raw User-Agent (or `-` when there is none); HEAD and other
+  methods are not counted
 
 On a request whose User-Agent matches no known bot signature, the plugin also reports a
 visitor who clicked through from an AI assistant: the `Referer` host is chatgpt.com,
@@ -128,6 +129,15 @@ Bluerails reduces the referrer to its host and drops the page address's query be
 storing anything. The request also carries your configured API key as a
 Bearer token in the `Authorization` header, so Bluerails can attribute the hit to
 your account server-side.
+
+**Agent door (402.bluerails.com).** Once a Bluerails listing ID is entered (empty by
+default), and only when something requests `/.well-known/poppy.json` or
+`/.well-known/poppy-0.4.json` on this site and the five-minute cached copy has expired,
+the plugin requests `https://402.bluerails.com/mcp/agent/v1/hotels/<listing ID>/poppy.json`
+(or `poppy-0.4.json`), a service operated by Bluerails. That request carries the listing ID
+in its address and WordPress's standard User-Agent, which names this site's address. It
+carries nothing about the visitor. Without a listing ID, no request goes to
+402.bluerails.com and fetches of these paths are not reported.
 
 By configuring this plugin you agree to Bluerails' Terms of Service
 (https://bluerails.com/terms) and Privacy Policy (https://bluerails.com/privacy).
@@ -364,7 +374,7 @@ run Complianz.
   and `/.well-known/poppy-0.4.json` on your own address, fetched from Bluerails and kept
   for five minutes, so AI agents find this hotel's own booking server (never a list of
   other hotels). Answers 404 when Bluerails switches it off or the document names another
-  host. Every fetch of the two paths is reported, whatever the User-Agent. Off until a
+  host. Every GET of the two paths is reported, whatever the User-Agent. Off until a
   listing ID is entered.
 
 = 1.7.0 =

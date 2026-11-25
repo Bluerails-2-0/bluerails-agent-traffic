@@ -43,7 +43,7 @@ No build step, no Composer, no npm — plain PHP, installable as-is.
    setting here. See "OpenAI Ads measurement" below.
 8. (BLUE-2656, off until a listing ID is set) Serves the hotel's agent door,
    `/.well-known/poppy.json` and `/.well-known/poppy-0.4.json`, by proxying Bluerails' documents
-   for that listing, and reports every fetch of them whatever the user agent. See "Agent door"
+   for that listing, and reports every GET of them whatever the user agent. See "Agent door"
    below.
 
 ## Setup
@@ -342,11 +342,13 @@ document in a transient:
 
 Every answer is `Content-Type: application/json`, `Cache-Control: no-store, max-age=0`,
 `Access-Control-Allow-Origin: *`, `X-Content-Type-Options: nosniff`, and defines `DONOTCACHEPAGE`,
-so every fetch reaches PHP and is counted. HEAD gets the headers only. Without a listing ID the
+so every fetch reaches PHP and is counted. HEAD gets the headers only and is not counted; other
+methods are left to WordPress. Without a listing ID the
 plugin does nothing on these paths and WordPress answers as before.
 
 **Reporting.** `maybe_capture()` (priority 10 on `wp_loaded`) runs before `maybe_serve()`
-(priority 20). On a door path it adds `door_document` to whatever it reports, sends
+(priority 20). On a GET of a door path, and only while a listing ID is set, it adds
+`door_document` to whatever it reports, sends
 `page_path` as `/.well-known/<document>`, and when no other path matched (no bot UA, signature,
 AI referral or markdown) still reports the fetch with the full UA (`-` when absent).
 **Backend:** visibility-web's ingest (`api.agent-traffic-ingest.ts`) currently answers 422
