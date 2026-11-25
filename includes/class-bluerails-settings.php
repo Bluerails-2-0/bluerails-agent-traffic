@@ -17,6 +17,7 @@ class Bluerails_Settings {
 	const OPT_API_KEY       = 'bluerails_agent_traffic_api_key';
 	const OPT_HAS_CDN       = 'bluerails_agent_traffic_has_cdn';
 	const OPT_BEHAVIORAL    = 'bluerails_agent_traffic_behavioral_enabled';
+	const OPT_DOOR_LISTING  = Bluerails_Agent_Door::OPT_LISTING_ID;
 
 	private static $instance = null;
 
@@ -96,6 +97,27 @@ class Bluerails_Settings {
 			'bluerails_main_section'
 		);
 
+		register_setting( self::OPTION_GROUP, self::OPT_DOOR_LISTING, array(
+			'type'              => 'string',
+			'sanitize_callback' => array( $this, 'sanitize_door_listing_id' ),
+			'default'           => '',
+		) );
+
+		add_settings_section(
+			'bluerails_door_section',
+			__( 'Agent door (poppy.json)', 'bluerails-agent-traffic' ),
+			array( $this, 'render_door_section_intro' ),
+			self::PAGE_SLUG
+		);
+
+		add_settings_field(
+			self::OPT_DOOR_LISTING,
+			__( 'Bluerails listing ID', 'bluerails-agent-traffic' ),
+			array( $this, 'render_door_listing_field' ),
+			self::PAGE_SLUG,
+			'bluerails_door_section'
+		);
+
 		add_settings_section(
 			'bluerails_behavioral_section',
 			__( 'Behavioral signal (beta)', 'bluerails-agent-traffic' ),
@@ -151,6 +173,36 @@ class Bluerails_Settings {
 			esc_html__( 'Yes, this site sits behind a CDN (Cloudflare, CloudFront, etc.)', 'bluerails-agent-traffic' )
 		);
 		echo '<p class="description">' . esc_html__( 'If a CDN serves cached pages directly from its edge, bot hits on those cached pages never reach WordPress and this plugin cannot see them. Answering "Yes" only turns on the reminder notice below — it does not disable capture.', 'bluerails-agent-traffic' ) . '</p>';
+	}
+
+	public function sanitize_door_listing_id( $value ) {
+		$clean = Bluerails_Agent_Door::sanitize_listing_id( $value );
+		if ( '' === $clean && '' !== trim( (string) $value ) ) {
+			add_settings_error( self::OPT_DOOR_LISTING, 'invalid_listing_id', __( 'The Bluerails listing ID must be a UUID such as 766cb53a-6677-4963-afdb-b2c72d180c1b. The previous value was kept.', 'bluerails-agent-traffic' ) );
+			return get_option( self::OPT_DOOR_LISTING, '' );
+		}
+		return $clean;
+	}
+
+	public function render_door_section_intro() {
+		echo '<p>' . esc_html__( 'With a listing ID from Bluerails, this site serves /.well-known/poppy.json and /.well-known/poppy-0.4.json, which tell AI agents where to get this hotel\'s live prices and booking: a Bluerails server that answers for this hotel only. The documents come from Bluerails and are refreshed every five minutes; when Bluerails switches the door off, both answer 404. Every GET of them is reported to your Agent Traffic dashboard, whatever the user agent. Leave empty to serve nothing.', 'bluerails-agent-traffic' ) . '</p>';
+		echo '<p>' . esc_html__( 'Some hosts answer /.well-known/*.json themselves without asking WordPress. Open the two addresses below after saving: if you see your host\'s error page instead of JSON, the "Agent door" section of the plugin\'s readme.txt has the one-line Apache or nginx rule that hands these paths to WordPress.', 'bluerails-agent-traffic' ) . '</p>';
+	}
+
+	public function render_door_listing_field() {
+		$value = get_option( self::OPT_DOOR_LISTING, '' );
+		printf(
+			'<input type="text" class="regular-text code" name="%1$s" value="%2$s" placeholder="00000000-0000-0000-0000-000000000000" autocomplete="off" />',
+			esc_attr( self::OPT_DOOR_LISTING ),
+			esc_attr( $value )
+		);
+		if ( '' !== $value ) {
+			foreach ( Bluerails_Bot_Detector::DOOR_DOCUMENTS as $document ) {
+				$url = home_url( '/.well-known/' . $document );
+				printf( '<br /><a href="%1$s" target="_blank" rel="noopener">%2$s</a>', esc_url( $url ), esc_html( $url ) );
+			}
+		}
+		echo '<p class="description">' . esc_html__( 'Provided by Bluerails. The document is only served if it names this site\'s own host.', 'bluerails-agent-traffic' ) . '</p>';
 	}
 
 	public function render_behavioral_section_intro() {

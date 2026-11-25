@@ -4,7 +4,7 @@
  * Plugin URI:        https://github.com/Bluerails-2-0/bluerails-wp-plugin
  * Description:       Detects AI-bot crawler traffic (GPTBot, ClaudeBot, PerplexityBot, etc.) on this
  *                     WordPress site and reports it to your Bluerails Discovery Agent Traffic dashboard.
- * Version:           1.7.0
+ * Version:           1.8.0
  * Requires at least: 5.8
  * Requires PHP:      7.4
  * Author:            Bluerails
@@ -22,7 +22,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'BLUERAILS_AGENT_TRAFFIC_VERSION', '1.7.0' );
+define( 'BLUERAILS_AGENT_TRAFFIC_VERSION', '1.8.0' );
 define( 'BLUERAILS_AGENT_TRAFFIC_FILE', __FILE__ );
 define( 'BLUERAILS_AGENT_TRAFFIC_DIR', plugin_dir_path( __FILE__ ) );
 
@@ -30,11 +30,12 @@ require_once BLUERAILS_AGENT_TRAFFIC_DIR . 'includes/class-bluerails-settings.ph
 require_once BLUERAILS_AGENT_TRAFFIC_DIR . 'includes/class-bluerails-bot-detector.php';
 require_once BLUERAILS_AGENT_TRAFFIC_DIR . 'includes/class-bluerails-behavioral-beacon.php';
 require_once BLUERAILS_AGENT_TRAFFIC_DIR . 'includes/class-bluerails-openai-ads-measurement.php';
+require_once BLUERAILS_AGENT_TRAFFIC_DIR . 'includes/class-bluerails-agent-door.php';
 require_once BLUERAILS_AGENT_TRAFFIC_DIR . 'includes/plugin-update-checker/plugin-update-checker.php';
 
 /**
- * Boot the plugin. Settings page, bot detector, the behavioral beacon and the
- * OpenAI Ads measurement module are independent singletons wired up on 'plugins_loaded' so all are available on
+ * Boot the plugin. Settings page, bot detector, the behavioral beacon, the
+ * OpenAI Ads measurement module and the agent door are independent singletons wired up on 'plugins_loaded' so all are available on
  * every request, including the earliest front-end hooks.
  */
 function bluerails_agent_traffic_init() {
@@ -42,6 +43,7 @@ function bluerails_agent_traffic_init() {
 	Bluerails_Bot_Detector::instance();
 	Bluerails_Behavioral_Beacon::instance();
 	Bluerails_OpenAI_Ads_Measurement::instance();
+	Bluerails_Agent_Door::instance();
 }
 add_action( 'plugins_loaded', 'bluerails_agent_traffic_init' );
 

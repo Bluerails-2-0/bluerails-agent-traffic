@@ -102,6 +102,15 @@ class Bluerails_Bot_Detector {
 	/** Longest Accept header forwarded; the backend rejects anything longer. */
 	const MAX_ACCEPT_LEN = 1024;
 
+	/** The agent-door documents Bluerails_Agent_Door serves (BLUE-2656), each at /.well-known/<name>. */
+	const DOOR_DOCUMENTS = array( 'poppy.json', 'poppy-0.4.json' );
+
+	/** Query argument a server rewrite can use to hand a door path to WordPress (README "Agent door"). */
+	const DOOR_QUERY_VAR = 'bluerails_agent_door';
+
+	/** The door document this request asks for, set by maybe_capture(); null otherwise. */
+	private $door_document = null;
+
 	/**
 	 * BLUE-1473: a small, NAMED allow-list of AI-assistant referrer hostnames —
 	 * mirrors the backend's `AI_REFERER_ALLOWLIST` (visibility-web/app/features/
@@ -169,10 +178,15 @@ class Bluerails_Bot_Detector {
 			return;
 		}
 
-		if ( empty( $_SERVER['HTTP_USER_AGENT'] ) ) {
+		// Every GET of the agent door is reported whatever the user agent (Muse, for
+		// one, presents as desktop Chrome), but only on a site that serves the door.
+		$door = self::requested_door_document();
+		$this->door_document = null !== $door && 'GET' === self::request_method() && null !== Bluerails_Agent_Door::listing_id() ? $door : null;
+
+		if ( empty( $_SERVER['HTTP_USER_AGENT'] ) && null === $this->door_document ) {
 			return;
 		}
-		$user_agent = sanitize_text_field( wp_unslash( $_SERVER['HTTP_USER_AGENT'] ) );
+		$user_agent = empty( $_SERVER['HTTP_USER_AGENT'] ) ? '-' : sanitize_text_field( wp_unslash( $_SERVER['HTTP_USER_AGENT'] ) );
 		// BLUE-1473: read on every request, independent of whether the UA matches —
 		// the referer-heuristic path below needs it even on a UA miss.
 		$referer = isset( $_SERVER['HTTP_REFERER'] ) ? esc_url_raw( wp_unslash( $_SERVER['HTTP_REFERER'] ) ) : '';
@@ -206,18 +220,48 @@ class Bluerails_Bot_Detector {
 			return;
 		}
 
-		$this->maybe_report_markdown_request( $user_agent, $referer );
+		if ( $this->maybe_report_markdown_request( $user_agent, $referer ) ) {
+			return;
+		}
+
+		if ( null !== $this->door_document ) {
+			$this->report_hit( '', $user_agent, $referer );
+		}
+	}
+
+	/** The request's HTTP method, uppercased; GET when unknown. */
+	public static function request_method() {
+		return isset( $_SERVER['REQUEST_METHOD'] ) ? strtoupper( sanitize_text_field( wp_unslash( $_SERVER['REQUEST_METHOD'] ) ) ) : 'GET';
+	}
+
+	/**
+	 * 'poppy.json' or 'poppy-0.4.json' when the request is for that door document
+	 * (by path, or by DOOR_QUERY_VAR from a server rewrite), else null.
+	 */
+	public static function requested_door_document() {
+		$uri  = isset( $_SERVER['REQUEST_URI'] ) ? wp_unslash( $_SERVER['REQUEST_URI'] ) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+		$path = (string) wp_parse_url( $uri, PHP_URL_PATH );
+		foreach ( self::DOOR_DOCUMENTS as $document ) {
+			if ( '/.well-known/' . $document === $path ) {
+				return $document;
+			}
+		}
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- a public, read-only document.
+		$asked = isset( $_GET[ self::DOOR_QUERY_VAR ] ) && is_string( $_GET[ self::DOOR_QUERY_VAR ] ) ? wp_unslash( $_GET[ self::DOOR_QUERY_VAR ] ) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+		return in_array( $asked, self::DOOR_DOCUMENTS, true ) ? $asked : null;
 	}
 
 	/**
 	 * Reports a request whose Accept header ranks markdown above HTML. The
-	 * backend ranks the header again and makes the final decision.
+	 * backend ranks the header again and makes the final decision. True when sent.
 	 */
 	private function maybe_report_markdown_request( $user_agent, $referer ) {
 		$accept = $this->markdown_accept_header();
-		if ( null !== $accept ) {
-			$this->report_hit( '', $user_agent, $referer, array( 'accept' => $accept ) );
+		if ( null === $accept ) {
+			return false;
 		}
+		$this->report_hit( '', $user_agent, $referer, array( 'accept' => $accept ) );
+		return true;
 	}
 
 	/**
@@ -380,6 +424,12 @@ class Bluerails_Bot_Detector {
 		}
 
 		$page_path = isset( $_SERVER['REQUEST_URI'] ) ? sanitize_text_field( wp_unslash( $_SERVER['REQUEST_URI'] ) ) : '/';
+		if ( null !== $this->door_document ) {
+			// A rewrite may have handed the door over as /?bluerails_agent_door=..., so the
+			// document's own path is sent and the hit counts under /.well-known/.
+			$page_path = '/.well-known/' . $this->door_document;
+			$extra_fields['door_document'] = $this->door_document;
+		}
 
 		$payload = array(
 			'bot_name'          => $bot_name,

@@ -41,6 +41,10 @@ No build step, no Composer, no npm — plain PHP, installable as-is.
    hotel's ChatGPT ad campaigns after visitor consent, sending `page_viewed` and, on clicks to
    the hotel's booking links, `checkout_started`. Config comes from Bluerails, not from a
    setting here. See "OpenAI Ads measurement" below.
+8. (BLUE-2656, off until a listing ID is set) Serves the hotel's agent door,
+   `/.well-known/poppy.json` and `/.well-known/poppy-0.4.json`, by proxying Bluerails' documents
+   for that listing, and reports every GET of them whatever the user agent. See "Agent door"
+   below.
 
 ## Setup
 
@@ -312,6 +316,75 @@ Tests: `php tests/test-openai-ads-measurement.php` and `node tests/test-openai-a
 Live check against a real Borlabs banner (schwitzers.com, OpenAI requests aborted, fake Pixel ID):
 `node bin/live-consent-check.cjs <dir containing node_modules/playwright> assets/js/bluerails-openai-ads-measurement.js`.
 
+## Agent door (BLUE-2656)
+
+`includes/class-bluerails-agent-door.php`; path recognition and fetch reporting in
+`includes/class-bluerails-bot-detector.php` (`requested_door_document()`, `DOOR_DOCUMENTS`).
+
+**Listing ID.** The option `bluerails_agent_door_listing_id` (settings screen, "Agent door", or
+`wp option update bluerails_agent_door_listing_id <uuid>`), validated as a UUID. Nothing the
+plugin already fetches carries it: the ingest key resolves a Discovery org, and Discovery has no
+link to a 402 listing; 402 keeps the hotel's host in `listings.metadata.agent_door_host` but has
+no lookup by host. A wrong ID cannot serve another hotel's document, because the document must
+name this site's host (below).
+
+**Upstream.** `GET https://402.bluerails.com/mcp/agent/v1/hotels/<id>/poppy.json` (and
+`poppy-0.4.json`; blue402-web `mcp/agent/poppy-doc.ts`), fetched on the first request after the
+cache expires: `timeout 3`, `redirection 0`, `limit_response_size 65536`. Cached per listing and
+document in a transient:
+
+| Upstream | Cached | Answer |
+|---|---|---|
+| 200 with `organization.domain` equal to the request host (lowercased, port dropped) | 300 s | 200, upstream body byte for byte |
+| 200 naming another host | 300 s | 404, logged with both hosts via `error_log` (once per fetch) |
+| 404 or 410 (switched off) | 300 s | 404 `{"error":"not_found"}` |
+| network error, other status, no `organization.domain` | 60 s | 503 `{"error":"door_unavailable"}`, `Retry-After: 60`, logged |
+
+Every answer is `Content-Type: application/json`, `Cache-Control: no-store, max-age=0`,
+`Access-Control-Allow-Origin: *`, `X-Content-Type-Options: nosniff`, and defines `DONOTCACHEPAGE`,
+so every fetch reaches PHP and is counted. HEAD gets the headers only and is not counted; other
+methods are left to WordPress. Without a listing ID the
+plugin does nothing on these paths and WordPress answers as before.
+
+**Reporting.** `maybe_capture()` (priority 10 on `wp_loaded`) runs before `maybe_serve()`
+(priority 20). On a GET of a door path, and only while a listing ID is set, it adds
+`door_document` to whatever it reports, sends
+`page_path` as `/.well-known/<document>`, and when no other path matched (no bot UA, signature,
+AI referral or markdown) still reports the fetch with the full UA (`-` when absent).
+**Backend:** visibility-web's ingest (`api.agent-traffic-ingest.ts`) currently answers 422
+`unrecognized_bot` to a report that matches no registry bot, verified signature, AI referral or
+markdown Accept header, and ignores `door_document`. Until it accepts `door_document`, only door
+fetches by registry bots or verified signers (muse.ai is on the signer list in `verify-web-bot-auth.ts`) land in `agent_visit`.
+
+**Hosts that do not route `/.well-known/` through WordPress.** The plugin runs on `wp_loaded`,
+so it only answers when the request reaches WordPress. Check
+`curl -sI https://<host>/.well-known/nonexistent-check.json`: WordPress's 404 (its theme, `text/html;
+charset=UTF-8`) means it does; the host's own error page means it does not (schwitzers.com on
+SiteGround, 2026-11-25). Then add, above `# BEGIN WordPress` and any other `.well-known` rule:
+
+```apache
+RewriteEngine On
+RewriteRule ^\.well-known/(poppy(-0\.4)?\.json)$ /index.php?bluerails_agent_door=$1 [L,QSA]
+```
+
+or for nginx, in the `server` block (exact `location =` matches win over prefix and regex blocks
+such as `location ^~ /.well-known/`):
+
+```nginx
+location = /.well-known/poppy.json     { rewrite ^ /index.php?bluerails_agent_door=poppy.json last; }
+location = /.well-known/poppy-0.4.json { rewrite ^ /index.php?bluerails_agent_door=poppy-0.4.json last; }
+```
+
+The query argument is a fallback: with both rules `REQUEST_URI` stays the original path, which
+`requested_door_document()` matches first. Whether SiteGround's nginx front end honours an
+`.htaccess` rule for a `.json` path is not verified.
+
+**Not served here.** No `/.well-known/oauth-protected-resource`, `/.well-known/mcp.json`,
+`ai-catalog.json` or `llms.txt`: those pointers on hotel sites come from other plugins, static
+files or Rank Math, and are repointed on each site.
+
+Test: `php tests/test-agent-door.php`.
+
 ## Why `wp_loaded`, not `template_redirect`
 
 WordPress's own hook reference recommends the earlier hooks (`init`/`wp_loaded`) for
@@ -360,6 +433,8 @@ notice both point customers at Connect Logs now, not just at the limitation.
   OpenAI Ads measurement config from Bluerails and enqueues the Pixel loader.
 - `assets/js/bluerails-openai-ads-measurement.js` — (BLUE-2725) consent-gated OpenAI Pixel
   loader and booking-click `checkout_started`.
+- `includes/class-bluerails-agent-door.php` — (BLUE-2656) serves `/.well-known/poppy.json` and
+  `poppy-0.4.json` by proxying the listing's documents from 402.bluerails.com.
 - `includes/plugin-update-checker/` — (BLUE-1534) vendored `YahnisElsts/plugin-update-checker`
   (PUC) v5.7, unmodified. Initialized in the main plugin file, pointed at this repo's own
   GitHub Releases, so installed sites get WordPress core's native update notice instead of a
@@ -371,10 +446,12 @@ notice both point customers at Connect Logs now, not just at the limitation.
   auto-merge; a human reviews the diff.
 
 No database schema — WordPress options only: `bluerails_agent_traffic_endpoint_url`,
-`bluerails_agent_traffic_api_key`, `bluerails_agent_traffic_has_cdn` (the CDN question), and
-`bluerails_agent_traffic_behavioral_enabled` (BLUE-1474, OFF by default), all via the standard
+`bluerails_agent_traffic_api_key`, `bluerails_agent_traffic_has_cdn` (the CDN question),
+`bluerails_agent_traffic_behavioral_enabled` (BLUE-1474, OFF by default) and
+`bluerails_agent_door_listing_id` (BLUE-2656, empty by default), all via the standard
 WordPress Options API, plus BLUE-2725's cached config (`bluerails_oai_ads_config` transient,
-`bluerails_oai_ads_config_last` option).
+`bluerails_oai_ads_config_last` option) and BLUE-2656's cached documents
+(`bluerails_agent_door_<md5>` transients).
 
 ## Cutting a release
 
