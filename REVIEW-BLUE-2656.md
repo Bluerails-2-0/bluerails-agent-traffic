@@ -1,5 +1,10 @@
 # Review: BLUE-2656, serve the hotel's agent door (plugin 1.8.0)
 
+Implemented-By: implementer subagent (claude-opus-5-5)
+Independent-Reviewer: fresh reviewer subagent (claude-sonnet-5-5)
+Review-Provenance: spawned by the orchestrator session (claude-opus-5-5), not by the implementer
+Review-Status: INDEPENDENT
+
 Independent review of commit d4b1907 (`BLUE-2656-poppy-door-route`) against `origin/main` (v1.7.0). Reviewer did not write the change. Reviewed from a separate worktree; no code changed.
 
 **Verdict: APPROVE WITH CHANGES.** Nothing here can fatal a hotel site or serve another hotel's file. Three items must be fixed or sequenced before 1.8.0 is released to auto-updating sites (findings 1, 2, 3).
@@ -8,11 +13,11 @@ Independent review of commit d4b1907 (`BLUE-2656-poppy-door-route`) against `ori
 
 | Lens | Status | Why |
 |---|---|---|
-| tech | APPLIES | New `wp_loaded` hook on every front-end request, outbound HTTP, transients, `exit` in a request hook, a new option, SSRF and cache-key surface. |
-| product-manager | APPLIES | Checked against the BLUE-2656 intent: same host, no redirect, 404/410 to 404, domain check, "every GET reported", empty default means nothing changes. Two of those are not met (findings 1, 2). |
-| product-designer | SKIP (light) | No guest-facing screen. The only UI is one settings field and section copy in `class-bluerails-settings.php`; I read the markup and escaping but did not render the WP admin page. |
-| persona | APPLIES | Hotel owner (auto-update, host that blocks `/.well-known/`, hand-edits `.htaccess`) and the AI agent fetching the document (404 vs 503 vs 200 semantics). |
-| cost-perf | APPLIES | Per-request overhead on normal pages, worker time held by a slow 402, per-fetch ingest POST, transient size. |
+| Tech | APPLIES | New `wp_loaded` hook on every front-end request, outbound HTTP, transients, `exit` in a request hook, a new option, SSRF and cache-key surface. |
+| Product Manager | APPLIES | Checked against the BLUE-2656 intent: same host, no redirect, 404/410 to 404, domain check, "every GET reported", empty default means nothing changes. Two of those are not met (findings 1, 2). |
+| Product Designer | SKIP | Light: no guest-facing screen. The only UI is one settings field and section copy in `class-bluerails-settings.php`; I read the markup and escaping but did not render the WP admin page. |
+| Persona | APPLIES | Hotel owner (auto-update, host that blocks `/.well-known/`, hand-edits `.htaccess`) and the AI agent fetching the document (404 vs 503 vs 200 semantics). |
+| Cost-Perf | APPLIES | Per-request overhead on normal pages, worker time held by a slow 402, per-fetch ingest POST, transient size. |
 
 ## Findings, ranked by what a hotel or guest would see break
 
