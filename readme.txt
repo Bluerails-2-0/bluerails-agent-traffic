@@ -4,7 +4,7 @@ Tags: ai bots, crawler, ai crawler, seo, analytics
 Requires at least: 5.8
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 1.7.0
+Stable tag: 1.8.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -56,10 +56,16 @@ signature list.
    page views and clicks on your booking links to your ChatGPT ad campaigns. See "OpenAI
    Ads measurement" below.
 
+8. With a listing ID from Bluerails, serves your hotel's agent door:
+   `/.well-known/poppy.json` and `/.well-known/poppy-0.4.json`, which tell AI agents
+   where to get this hotel's live prices and booking, and reports every fetch of them.
+   See "Agent door" below.
+
 No database table and no custom schema are used — the plugin stores its settings as
 entries in the standard WordPress Options API (ingest endpoint URL, API key, a CDN
-yes/no flag, and the behavioral-signal opt-in flag), plus the cached OpenAI Ads
-measurement settings (a transient and an option).
+yes/no flag, the behavioral-signal opt-in flag and the agent-door listing ID), plus the
+cached OpenAI Ads measurement settings (a transient and an option) and the cached
+agent-door documents (transients).
 
 = External services =
 
@@ -101,6 +107,9 @@ changes it):
 * `referer` — the raw `Referer` header value (empty string when absent), sent on
   every reported hit (Bluerails stores only its host)
 * `accept` — the raw `Accept` header, sent only on a markdown hit (step 5 above)
+* `door_document` — `poppy.json` or `poppy-0.4.json`, sent only on a fetch of the agent
+  door (step 8 above). Every such fetch is reported whatever its User-Agent, with the
+  full raw User-Agent (or `-` when there is none)
 
 On a request whose User-Agent matches no known bot signature, the plugin also reports a
 visitor who clicked through from an AI assistant: the `Referer` host is chatgpt.com,
@@ -218,6 +227,45 @@ Content Security Policy, allow `https://bzrcdn.openai.com` in `script-src` and
 `https://bzr.openai.com https://bzrcdn.openai.com` in `connect-src` (and `https://bzr.openai.com`
 in `img-src`).
 
+= Agent door (BLUE-2656) =
+
+**Off until you enter a Bluerails listing ID** (Settings → Bluerails Agent Traffic → Agent
+door). With one set, this site answers `/.well-known/poppy.json` and
+`/.well-known/poppy-0.4.json` itself, on its own address. The content comes from Bluerails:
+the plugin fetches `https://402.bluerails.com/mcp/agent/v1/hotels/<listing ID>/poppy.json`
+(and `poppy-0.4.json`) when an agent asks for it, sends nothing about the visitor in that
+request, keeps the answer for five minutes, and passes it on unchanged as `application/json`.
+The documents name one address: a Bluerails server that answers for this hotel only, never
+for other hotels.
+
+* When Bluerails switches the door off, or the listing is unknown, both paths answer 404.
+* If the document names a different host than the one the request came to (for example
+  `www.` against no `www.`), the plugin answers 404 and writes a line to the PHP error log,
+  instead of serving a document agents would reject.
+* If Bluerails cannot be reached, the plugin answers 503 and tries again after a minute.
+* The answers are marked not to be cached, so every fetch reaches WordPress and is counted.
+
+**Hosts that answer `/.well-known/` themselves.** Some hosts serve `/.well-known/*.json`
+straight from disk and answer with their own 404 page, without asking WordPress. Open
+`https://<your site>/.well-known/poppy.json` after saving the listing ID: if you see your
+host's error page instead of JSON, add one rule that hands the two paths to WordPress.
+
+Apache (`.htaccess`, above `# BEGIN WordPress` and above any other `.well-known` rule):
+
+    RewriteEngine On
+    RewriteRule ^\.well-known/(poppy(-0\.4)?\.json)$ /index.php?bluerails_agent_door=$1 [L,QSA]
+
+nginx (in the site's `server` block; exact matches win over every other `location`):
+
+    location = /.well-known/poppy.json     { rewrite ^ /index.php?bluerails_agent_door=poppy.json last; }
+    location = /.well-known/poppy-0.4.json { rewrite ^ /index.php?bluerails_agent_door=poppy-0.4.json last; }
+
+If your host lets you change neither, the agent door cannot be served by this plugin.
+
+This plugin serves no `/.well-known/oauth-protected-resource`, `/.well-known/mcp.json` or
+`llms.txt`. If another plugin serves `oauth-protected-resource` on your site, agents that
+read the door may try to sign in to it; remove it unless you run an MCP server on this site.
+
 = Known limitations =
 
 * **CDN edge caching**: if a CDN (Cloudflare, CloudFront, etc.) serves a cached page
@@ -311,6 +359,14 @@ run Complianz.
 
 == Changelog ==
 
+= 1.8.0 =
+* Adds the agent door: with a Bluerails listing ID set, serves `/.well-known/poppy.json`
+  and `/.well-known/poppy-0.4.json` on your own address, fetched from Bluerails and kept
+  for five minutes, so AI agents find this hotel's own booking server (never a list of
+  other hotels). Answers 404 when Bluerails switches it off or the document names another
+  host. Every fetch of the two paths is reported, whatever the User-Agent. Off until a
+  listing ID is entered.
+
 = 1.7.0 =
 * Adds OpenAI Ads measurement ("OpenAI Ads Messung"): once Bluerails switches it on for your
   account, loads OpenAI's Measurement Pixel after visitor consent (Borlabs Cookie marketing
@@ -394,6 +450,9 @@ run Complianz.
   guidance.
 
 == Upgrade Notice ==
+
+= 1.8.0 =
+Lets this site serve its own agent door (poppy.json) once Bluerails gives you a listing ID. Nothing changes until one is entered.
 
 = 1.7.0 =
 Lets Bluerails switch on ChatGPT ad measurement (OpenAI Measurement Pixel, after visitor consent) for your site.
